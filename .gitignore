@@ -1,0 +1,40 @@
+# ============================================================
+#  长江雨课堂 · 自动刷课助手  ——  版本控制忽略规则
+# ============================================================
+
+# ---- 本地私有配置与自动探测缓存（含教室号等，绝不能提交）----
+_tools/local.config.json
+.local-state/
+
+# ---- 本地调试用 Edge 配置（约 1.4 GB，绝不能提交）----
+_edge-debug-profile/
+*.log
+
+# ---- 逆向分析资料（第三方站点前端代码、他人脚本，含版权内容）----
+_recon/
+
+# ---- 截图（含课程画面/真人形象，不适合公开）----
+screenshots/
+
+# ---- 调试期间自动生成的备份 ----
+_backup/
+
+# ---- 仿真素材（体积大，可由 npm run media 重新生成）----
+_tools/public/media/*.webm
+_tools/public/media/*.wav
+_tools/public/media/clip.json
+
+# ---- Node ----
+node_modules/
+npm-debug.log*
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+*.swp
+
+# ---- 测试产生的临时目录 ----
+edge-profile-*/
+*_edge_debug/

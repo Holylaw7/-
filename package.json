@@ -1,0 +1,17 @@
+{
+  "name": "changjiang-yuketang-auto",
+  "version": "1.1.0",
+  "private": true,
+  "description": "长江雨课堂自动刷课用户脚本（自动跳转 / 2倍速 / 后台播放）+ 本地仿真验证环境",
+  "scripts": {
+    "build": "node build.js && node make-console-build.js",
+    "check": "node build.js --check",
+    "console": "node make-console-build.js",
+    "media": "node _tools/make-webm.js 8",
+    "mock": "node _tools/mock-server.js 8099",
+    "e2e": "node _tools/e2e.js",
+    "e2e:headful": "node _tools/e2e.js --headful",
+    "verify:paste": "node _tools/verify-paste.js"
+  },
+  "engines": { "node": ">=20" }
+}

@@ -1,0 +1,49 @@
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "Microsoft YaHei", system-ui, sans-serif; background: #f4f6fa; color: #1f2329; }
+
+.login-wrap { max-width: 420px; margin: 18vh auto; background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.08); }
+.login-wrap h2 { margin: 0 0 8px; font-size: 20px; }
+.login-wrap p { color: #6b7280; font-size: 13px; }
+button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid #d0d5dd; background: #fff; cursor: pointer; }
+button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+
+.logs-page { max-width: 900px; margin: 32px auto; background: #fff; border-radius: 10px; padding: 24px; }
+.logs-head { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eef0f4; padding-bottom: 12px; }
+.overall { color: #2563eb; font-weight: 600; }
+.leaf-list { list-style: none; margin: 0; padding: 0; }
+.leaf-item { display: flex; justify-content: space-between; padding: 14px 8px; border-bottom: 1px solid #f2f4f7; }
+.leaf-item.is-done .leaf-item__status { color: #16a34a; }
+.leaf-item__status { color: #6b7280; font-size: 13px; }
+
+.lms-graph-layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; padding: 16px; min-height: 100vh; }
+.main-content { background: #fff; border-radius: 10px; padding: 16px; }
+.course-nav { background: #fff; border-radius: 10px; padding: 12px; }
+.video-box .title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.progress-wrap { color: #2563eb; font-weight: 600; margin-bottom: 10px; }
+xt-wrap { display: block; background: #0b1020; border-radius: 8px; position: relative; min-height: 260px; }
+xt-controls { display: block; position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.6); padding: 8px; }
+xt-inner { display: flex; gap: 14px; align-items: center; color: #fff; }
+
+/* 播放器控件：给按钮真实尺寸，否则 CDP 真实鼠标点不到（真实站点按钮约 42x24） */
+xt-playbutton, xt-volumebutton { display: inline-block; width: 34px; height: 24px; cursor: pointer; }
+xt-playbutton .xt_video_player_play_btn { display: block; width: 100%; height: 100%; background: #cbd5e1; border-radius: 3px; }
+xt-volumebutton .xt_video_player_volume_btn { display: block; width: 100%; height: 100%; background: #94a3b8; border-radius: 3px; }
+
+/* 倍速按钮：可见、有尺寸，菜单默认折叠；hover 或 .open 时展开（贴近真实站点行为） */
+xt-speedbutton { display: inline-block; position: relative; width: 60px; height: 24px; cursor: pointer;
+                 line-height: 24px; text-align: center; color: #e2e8f0;
+                 background: rgba(255,255,255,.12); border-radius: 4px; font-size: 12px; }
+xt-speedbutton xt-speedvalue { display: inline-block; }
+xt-speedlist { display: none; position: absolute; bottom: 30px; left: 0; min-width: 74px;
+               background: #1f2937; border-radius: 6px; padding: 4px; margin: 0; z-index: 20; }
+xt-speedbutton.open xt-speedlist { display: block; }
+xt-speedbutton:not(.no-hover) xt-speedlist { }
+xt-speedbutton:hover xt-speedlist { display: block; }
+xt-button { display: block; padding: 4px 10px; cursor: pointer; color: #fff; border-radius: 4px; }
+xt-button:hover { background: #374151; }
+.nav-list { list-style: none; margin: 0; padding: 0; }
+.nav-item-leaf-box { display: flex; justify-content: space-between; padding: 10px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.nav-item-leaf-box:hover { background: #f4f6fa; }
+.nav-item-leaf-box.is-active { background: #e8f0fe; color: #2563eb; font-weight: 600; }
+.nav-item-leaf-box.is-done .nav-item-leaf-box__state { color: #16a34a; }

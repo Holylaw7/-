@@ -1,0 +1,18 @@
+// ==UserScript==
+// @name         长江雨课堂 · 自动刷课助手
+// @name:zh-CN   长江雨课堂 · 自动刷课助手
+// @namespace    https://github.com/local/changjiang-yuketang-auto
+// @version      1.1.0
+// @description  长江雨课堂自动刷课：自动跳转下一节、锁定 2 倍速、切换页面/最小化后仍然后台播放（防暂停 / 防降速 / 防挂机弹窗），并自动跳过测验与作业。
+// @description:zh-CN 长江雨课堂自动刷课：自动跳转下一节、锁定 2 倍速、切换页面后仍然后台播放。
+// @author       local
+// @license      MIT
+// @icon         https://changjiang.yuketang.cn/static/images/favicon.ico
+// @match        *://*.yuketang.cn/*
+// @match        *://*.yuketang.com/*
+// @match        *://*.xuetangx.com/*
+// @match        *://*.xuetangx.org/*
+// @match        *://*.ykt.io/*
+// @run-at       document-start
+// @grant        unsafeWindow
+// ==/UserScript==

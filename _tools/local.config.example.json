@@ -1,0 +1,9 @@
+{
+  "_说明": "把这个文件复制成 local.config.json 并填入你自己的参数；local.config.json 已被 gitignore，不会提交",
+  "origin": "https://changjiang.yuketang.cn",
+  "classroom": "你的教室号",
+  "universityId": "你的学校id（可留空，脚本会从页面 URL 自动识别）",
+  "leaf": "（可选）指定要测试的小节 id",
+  "cdpPort": 9222,
+  "mockPort": 8099
+}
