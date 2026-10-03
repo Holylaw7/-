@@ -122,7 +122,16 @@
     }).catch(function (e) { plog('heartbeat failed: ' + (e && e.message)); });
   }, 1200);
 
-  /* ---- 打开页面即尝试自动播放（模拟站点行为） ---- */
+  /* ---- 打开页面即尝试自动播放（模拟站点行为） ----
+   *
+   *  注意：这里刻意设为静音。
+   *  真机浏览器里，有声自动播放需要「用户手势」或足够高的媒体参与度，
+   *  无头/自动化环境则一律拒绝有声自动播放。
+   *  脚本自身完全不管音量（见 CHANGELOG v1.1.3），所以由仿真站点像真站一样
+   *  自己声明初始静音状态，才能让脚本逻辑（接管/倍速/跳转）被有效测到。
+   *  用户点音量按钮仍可正常取消静音。
+   */
+  media.muted = true;
   media.volume = 0.3;
   media.play().then(function () { plog('autoplay ok'); }).catch(function (e) { plog('autoplay blocked: ' + (e && e.name)); });
   syncTip();

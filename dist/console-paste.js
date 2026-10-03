@@ -1,5 +1,5 @@
 /*
- * 长江雨课堂 · 自动刷课助手 —— 控制台粘贴版 v1.1.2
+ * 长江雨课堂 · 自动刷课助手 —— 控制台粘贴版 v1.1.3
  *
  * 用法（篡改猴因任何原因没生效时的应急方案）：
  *   1. 在课程页按 F12 打开开发者工具 → 切到「控制台 / Console」
@@ -21,26 +21,13 @@
   // ============================================================================
   const YKT = {
     name: '长江雨课堂 · 自动刷课助手',
-    version: '1.1.2',
+    version: '1.1.3',
     debug: true,
   };
 
   const CFG = {
     /** 目标倍速 */
     rate: 2,
-    /**
-     * 是否由脚本静音。
-     *
-     * 默认关闭（v1.1.2 起）。原因：
-     *   · 站点会**反复取消静音**（真站实测约每 2 秒一次），脚本若持续对抗
-     *     （设回去 / 拦截属性写入），这种拉锯本身就可能被站点判定为异常；
-     *   · 浏览器自带标签页静音，想安静时右键标签页「使标签页静音」即可，更干净。
-     *
-     * 代价：静音是浏览器自动播放策略的豁免条件之一。关闭后首次进入播放页
-     * 可能被自动播放策略拦下；此时脚本会提示「点一下页面」，点过之后整段课程
-     * 都不再需要交互。需要免交互时把这项打开即可。
-     */
-    mute: false,
     /** 是否开启后台/切屏防暂停 */
     background: true,
     /** 是否启用「倍速点击桥」：由外部本地工具（_tools/speed-bridge.js）用**真实鼠标**
@@ -521,18 +508,6 @@
         }
       }
 
-      // ------------------------------------------------- ④ 静音：不干预
-      //
-      //  真站实测：站点会**反复取消静音**（约每 2 秒一次，16 秒内试了 50 多次）。
-      //  早期实现为了保住静音，在属性层拦截了站点的 muted 写入。但那种持续对抗：
-      //    · 会让站点每次想调音量都被挡回去，行为异常；
-      //    · 拉锯本身可能被站点的异常检测注意到。
-      //
-      //  因此 v1.1.2 起改为**完全不干预音量/静音**：
-      //    · 脚本默认不静音（CFG.mute 默认 false）；
-      //    · 想安静就用浏览器自带的「使标签页静音」，比脚本对抗干净得多；
-      //    · 需要免交互自动播放的用户可自行打开面板里的「静音」选项，
-      //      此时也只在需要时设一次，不做属性拦截。
 
       this.log('后台播放守卫已装载：事件封堵 + 属性伪造 + pause 拦截');
 
@@ -890,23 +865,16 @@
     },
 
     /**
-     * 后台保活：按需静音 + 自动续播。
-     *
-     * 关于静音（v1.1.2 起默认不做）：
-     *   真站实测站点会反复取消静音（约每 2 秒一次）。脚本若持续对抗，
-     *   这种拉锯可能被站点注意到；而浏览器自带「使标签页静音」更干净。
-     *   所以默认不静音；用户在面板勾选「静音」后才设一次。
+     * 后台保活：自动续播（完全不碰音量/静音）。
      *
      * 关于「自动播放被网站拦截」：
-     *   浏览器的自动播放策略要求「用户手势」或「静音」二者之一。
-     *   默认不静音时首次可能被拦，此时标记 autoplayBlocked 并**停止无效重试**，
-     *   提示用户点一下页面（记到手势后自动恢复播放）。
+     *   浏览器的自动播放策略要求「用户手势」；脚本自 v1.1.3 起不再静音，
+     *   所以首次可能被拦：此时标记 autoplayBlocked 并**停止无效重试**，
+     *   提示用户点一下页面，记录到手势后自动恢复播放。
      */
     keepAlive(media) {
       if (!media) return;
       try {
-        if (CFG.mute) this.ensureMuted(media);
-
         const dur = Number(media.duration);
         const nearEnd = Number.isFinite(dur) && dur > 1 && dur - media.currentTime <= 0.4;
         if (!media.paused || media.ended || nearEnd) {
@@ -917,7 +885,12 @@
         // 不支持 play() 的媒体对象直接跳过
         if (typeof media.play !== 'function') return;
 
-        // 已知被浏览器拦截且用户还没交互过 → 不再空转重试，只等手势
+        // 同一媒体元素上的失败退避：
+        //   · 自动播放策略拦截（NotAllowedError）→ 等用户手势，不做无谓重试
+        //   · 其它失败（AbortError/媒体被换掉/尚不可播）→ 指数退避重试，有次数上限
+        // 这样既不会每 500ms 空转刷屏，也不会因为一次偶发失败就永久放弃。
+        const now = Date.now();
+        if (this._playRetryUntil && now < this._playRetryUntil) return;
         if (this.autoplayBlocked && !U.gesture.has()) return;
 
         const p = media.play();
@@ -928,57 +901,69 @@
               LOG.ok('自动播放已恢复');
             }
             this.playFailCount = 0;
+            this._playRetryUntil = 0;
           }).catch((err) => {
             const name = (err && err.name) || '';
             this.playFailCount = (this.playFailCount || 0) + 1;
             const mediaErr = media.error;
 
             if (name === 'NotAllowedError') {
-              // 自动播放策略拦截 —— 这是最常见的"被网站拦截"
+              // 自动播放策略拦截 —— 即"被浏览器/网站拦住"，等用户手势
               this.autoplayBlocked = true;
               this.onAutoplayBlocked(media);
               return;
             }
+
+            // 其它失败：指数退避（0.5s → 1s → 2s → 4s，上限 5s）
+            const backoff = Math.min(500 * Math.pow(2, Math.min(this.playFailCount - 1, 4)), 5000);
+            this._playRetryUntil = Date.now() + backoff;
+
             if (mediaErr && (mediaErr.code === 3 || mediaErr.code === 4)) {
               if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
                 LOG.warn(`媒体解码失败（code ${mediaErr.code}）：${mediaErr.message || ''}，可能是浏览器不支持该编码`);
               }
               return;
             }
-            if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
-              LOG.warn(`播放失败（第 ${this.playFailCount} 次）：${name} ${(err && err.message) || ''}`);
+            if (this.playFailCount === 1 || this.playFailCount % 10 === 0) {
+              LOG.warn(`播放失败（第 ${this.playFailCount} 次，${Math.round(backoff / 1000 * 10) / 10}s 后重试）：${name} ${(err && err.message) || ''}`);
             }
           });
         }
       } catch (e) { }
     },
 
-    /** 强制媒体静音（静音是自动播放策略放行的条件之一） */
-    ensureMuted(media) {
-      if (!CFG.mute || !media) return;
-      try {
-        if (!media.muted) media.muted = true;
-        if (media.volume !== 0) media.volume = 0;
-        media.defaultMuted = true;
-        if (!media.hasAttribute('muted')) media.setAttribute('muted', 'muted');
-      } catch (e) { }
-    },
-
-    /** 被自动播放策略拦截时的处理：提示一次，并在用户交互后自动恢复 */
+    /**
+     * 被自动播放策略拦截时的处理：提示一次，并在用户交互后自动恢复。
+     *
+     * 为什么"过一阵又会恢复"：
+     *   浏览器的自动播放策略只认「用户手势」。脚本在 document-start 就监听了
+     *   pointerdown / mousedown / keydown / touchstart / **wheel** / click，
+     *   所以你哪怕只是滚动一下页面、切回窗口时带了一下滚轮、敲了个键，
+     *   都会被记成一次手势 —— 脚本随即重试 play()，于是播放恢复。
+     *   也就是说：**恢复不是浏览器自己变宽容了，而是你无意中给了它手势。**
+     *
+     *   反过来，如果一直没有任何交互，就一直是拦着的（脚本不会空转重试）。
+     */
     onAutoplayBlocked(media) {
+      this.autoplayBlockCount = (this.autoplayBlockCount || 0) + 1;
       if (this._autoplayNotified) return;
       this._autoplayNotified = true;
-      LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音或缺少用户手势）。');
-      UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下，脚本会自动继续（之后整段课程都不再需要点击）');
+      LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音且当前页面还没有用户手势）。');
+      UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下或滚一下，脚本会立刻继续（之后整段课程都不再需要交互）');
+      const since = Date.now();
       U.gesture.wait(0).then(() => {
-        LOG.ok('检测到你的点击，正在恢复自动播放…');
+        const waited = Math.round((Date.now() - since) / 1000);
+        LOG.ok(`检测到用户手势（等待 ${waited} 秒），正在恢复自动播放…`);
         this.autoplayBlocked = false;
         this._autoplayNotified = false;
+        this._autoplayRecoveredAt = Date.now();
         const m = Player.get() || media;
-        this.ensureMuted(m);
         try {
           const p = m.play();
-          if (p && p.catch) p.catch(() => { });
+          if (p && p.catch) {
+            p.then(() => LOG.ok('自动播放已恢复'))
+              .catch((e) => LOG.warn('手势后重试仍失败：' + ((e && e.name) || '')));
+          }
         } catch (e) { }
       });
     },
@@ -1832,7 +1817,6 @@
               <label class="chk"><input type="checkbox" id="c-next" ${CFG.autoNext ? 'checked' : ''}>自动跳转</label>
             </div>
             <div class="row">
-              <label class="chk"><input type="checkbox" id="c-mute" ${CFG.mute ? 'checked' : ''}>静音</label>
               <label class="chk"><input type="checkbox" id="c-ff" ${CFG.fastForward ? 'checked' : ''}>快进到结尾</label>
             </div>
             <button class="go" id="btn-go">开始刷课</button>
@@ -1854,7 +1838,7 @@
       this.els = {
         hd: q('hd'), bd: q('bd'), log: q('log'), go: q('btn-go'), min: q('btn-min'),
         page: q('s-page'), prog: q('s-prog'), rate: q('s-rate'), guard: q('s-guard'),
-        segRate: q('seg-rate'), cBg: q('c-bg'), cNext: q('c-next'), cMute: q('c-mute'), cFf: q('c-ff'),
+        segRate: q('seg-rate'), cBg: q('c-bg'), cNext: q('c-next'), cFf: q('c-ff'),
       };
 
       [1, 1.25, 1.5, 2, 3].forEach((r) => {
@@ -1881,7 +1865,6 @@
       });
       bind(this.els.cBg, 'background');
       bind(this.els.cNext, 'autoNext');
-      bind(this.els.cMute, 'mute');
       bind(this.els.cFf, 'fastForward');
 
       this.els.go.addEventListener('click', () => Run.toggle());
@@ -2117,7 +2100,7 @@
         `真实可见性 : hidden=${raw.hidden} visibilityState=${raw.visibilityState} hasFocus=${raw.hasFocus}`,
         `伪造后读取 : hidden=${raw.fakeHidden} visibilityState=${raw.fakeVis} hasFocus=${raw.fakeFocus}`,
         `speedUI    : xt-speedlist=${document.querySelectorAll('xt-speedlist').length} xt-speedbutton=${document.querySelectorAll('xt-speedbutton').length}`,
-        `cfg        : rate=${CFG.rate} mute=${CFG.mute} background=${CFG.background} autoNext=${CFG.autoNext}`,
+        `cfg        : rate=${CFG.rate} background=${CFG.background} autoNext=${CFG.autoNext}`,
         `---- 最近日志 ----`,
         ...this.logLines.slice(-25),
       ].join('\n');
@@ -2256,7 +2239,7 @@
         if (m) {
           // ① 倍速：只通过「真实点击播放器菜单」设置（见 syncSpeedUi 的说明）
           if (i % 2 === 0) this.syncSpeedUi(m);
-          // ② 静音 + 续播（防后台暂停）
+          // ② 续播（防后台暂停；脚本不碰音量/静音）
           if (CFG.background) Player.keepAlive(m);
           // ③ 统计已观看时长，用于卡死告警（seek 造成的大跳变不计入）
           const pos = Number(m.currentTime || 0);
@@ -2594,13 +2577,13 @@
       // ① 最早：装载守卫（必须早于站点脚本注册监听）
       //    注意：iframe 内的播放器同样需要守卫与倍速，否则后台照样被暂停
       try { Guard.install(); } catch (e) { console.error('[刷课助手] 守卫装载失败', e); }
-      // 追踪用户手势：浏览器自动播放策略要求「有用户手势 或 已静音」，
+      // 追踪用户手势：浏览器自动播放策略要求有用户手势（脚本不再静音），
       // 有了手势记录，用户点过一次之后脚本才能顺利恢复自动播放。
       try { U.gesture.install(); } catch (e) { }
       try { Api.hook(); } catch (e) { }
 
       // ② 恢复用户设置
-      ['rate', 'mute', 'background', 'autoNext', 'fastForward', 'speedBridge'].forEach((k) => {
+      ['rate', 'background', 'autoNext', 'fastForward', 'speedBridge'].forEach((k) => {
         const v = STORE.get(k, undefined);
         if (v !== undefined) CFG[k] = v;
       });
@@ -2731,6 +2714,8 @@
                 error: m && m.error ? { code: m.error.code, message: m.error.message } : null,
                 playFailCount: Player.playFailCount || 0,
                 autoplayBlocked: !!Player.autoplayBlocked,
+                autoplayBlockCount: Player.autoplayBlockCount || 0,
+                autoplayRecoveredAt: Player._autoplayRecoveredAt || null,
                 userGesture: { seen: U.gesture.seen, browserActive: U.gesture.browserSaysActive() },
                 rateFixCount: Player.rateFixCount || 0,
                 rateStats: Player.rateStats(),
@@ -2816,16 +2801,6 @@
         } else {
           this.add('站点内部倍速值一致', null, '读不到内部值（正常，不同播放器版本结构不同）');
         }
-
-        // 静音：默认关闭。只校验「实际状态与设置一致」，不强制要求静音。
-        // 关闭静音是 v1.1.2 的默认选择 —— 站点会反复取消静音，脚本持续对抗
-        // 反而可能被判定异常；想安静时用浏览器自带的「使标签页静音」更干净。
-        const muted = !!m.muted || Number(m.volume) === 0;
-        this.add(CFG.mute ? '已静音（按你的设置）' : '静音已关闭（按你的设置）',
-          CFG.mute ? muted : !muted,
-          CFG.mute
-            ? `muted=${m.muted} volume=${m.volume}`
-            : `muted=${m.muted} volume=${m.volume}（需要安静可右键标签页选「使标签页静音」）`);
 
         this.add('视频正在播放', !m.paused, m.paused ? `paused=true（playFail=${Player.playFailCount || 0}）` : `currentTime=${m.currentTime.toFixed(1)}`);
 

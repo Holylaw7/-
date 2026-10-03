@@ -54,16 +54,6 @@ const Verify = {
         this.add('站点内部倍速值一致', null, '读不到内部值（正常，不同播放器版本结构不同）');
       }
 
-      // 静音：默认关闭。只校验「实际状态与设置一致」，不强制要求静音。
-      // 关闭静音是 v1.1.2 的默认选择 —— 站点会反复取消静音，脚本持续对抗
-      // 反而可能被判定异常；想安静时用浏览器自带的「使标签页静音」更干净。
-      const muted = !!m.muted || Number(m.volume) === 0;
-      this.add(CFG.mute ? '已静音（按你的设置）' : '静音已关闭（按你的设置）',
-        CFG.mute ? muted : !muted,
-        CFG.mute
-          ? `muted=${m.muted} volume=${m.volume}`
-          : `muted=${m.muted} volume=${m.volume}（需要安静可右键标签页选「使标签页静音」）`);
-
       this.add('视频正在播放', !m.paused, m.paused ? `paused=true（playFail=${Player.playFailCount || 0}）` : `currentTime=${m.currentTime.toFixed(1)}`);
 
       // ---------- 3. 自动播放策略 ----------

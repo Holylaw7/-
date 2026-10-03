@@ -297,23 +297,16 @@ const Player = {
   },
 
   /**
-   * 后台保活：按需静音 + 自动续播。
-   *
-   * 关于静音（v1.1.2 起默认不做）：
-   *   真站实测站点会反复取消静音（约每 2 秒一次）。脚本若持续对抗，
-   *   这种拉锯可能被站点注意到；而浏览器自带「使标签页静音」更干净。
-   *   所以默认不静音；用户在面板勾选「静音」后才设一次。
+   * 后台保活：自动续播（完全不碰音量/静音）。
    *
    * 关于「自动播放被网站拦截」：
-   *   浏览器的自动播放策略要求「用户手势」或「静音」二者之一。
-   *   默认不静音时首次可能被拦，此时标记 autoplayBlocked 并**停止无效重试**，
-   *   提示用户点一下页面（记到手势后自动恢复播放）。
+   *   浏览器的自动播放策略要求「用户手势」；脚本自 v1.1.3 起不再静音，
+   *   所以首次可能被拦：此时标记 autoplayBlocked 并**停止无效重试**，
+   *   提示用户点一下页面，记录到手势后自动恢复播放。
    */
   keepAlive(media) {
     if (!media) return;
     try {
-      if (CFG.mute) this.ensureMuted(media);
-
       const dur = Number(media.duration);
       const nearEnd = Number.isFinite(dur) && dur > 1 && dur - media.currentTime <= 0.4;
       if (!media.paused || media.ended || nearEnd) {
@@ -324,7 +317,12 @@ const Player = {
       // 不支持 play() 的媒体对象直接跳过
       if (typeof media.play !== 'function') return;
 
-      // 已知被浏览器拦截且用户还没交互过 → 不再空转重试，只等手势
+      // 同一媒体元素上的失败退避：
+      //   · 自动播放策略拦截（NotAllowedError）→ 等用户手势，不做无谓重试
+      //   · 其它失败（AbortError/媒体被换掉/尚不可播）→ 指数退避重试，有次数上限
+      // 这样既不会每 500ms 空转刷屏，也不会因为一次偶发失败就永久放弃。
+      const now = Date.now();
+      if (this._playRetryUntil && now < this._playRetryUntil) return;
       if (this.autoplayBlocked && !U.gesture.has()) return;
 
       const p = media.play();
@@ -335,57 +333,69 @@ const Player = {
             LOG.ok('自动播放已恢复');
           }
           this.playFailCount = 0;
+          this._playRetryUntil = 0;
         }).catch((err) => {
           const name = (err && err.name) || '';
           this.playFailCount = (this.playFailCount || 0) + 1;
           const mediaErr = media.error;
 
           if (name === 'NotAllowedError') {
-            // 自动播放策略拦截 —— 这是最常见的"被网站拦截"
+            // 自动播放策略拦截 —— 即"被浏览器/网站拦住"，等用户手势
             this.autoplayBlocked = true;
             this.onAutoplayBlocked(media);
             return;
           }
+
+          // 其它失败：指数退避（0.5s → 1s → 2s → 4s，上限 5s）
+          const backoff = Math.min(500 * Math.pow(2, Math.min(this.playFailCount - 1, 4)), 5000);
+          this._playRetryUntil = Date.now() + backoff;
+
           if (mediaErr && (mediaErr.code === 3 || mediaErr.code === 4)) {
             if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
               LOG.warn(`媒体解码失败（code ${mediaErr.code}）：${mediaErr.message || ''}，可能是浏览器不支持该编码`);
             }
             return;
           }
-          if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
-            LOG.warn(`播放失败（第 ${this.playFailCount} 次）：${name} ${(err && err.message) || ''}`);
+          if (this.playFailCount === 1 || this.playFailCount % 10 === 0) {
+            LOG.warn(`播放失败（第 ${this.playFailCount} 次，${Math.round(backoff / 1000 * 10) / 10}s 后重试）：${name} ${(err && err.message) || ''}`);
           }
         });
       }
     } catch (e) { }
   },
 
-  /** 强制媒体静音（静音是自动播放策略放行的条件之一） */
-  ensureMuted(media) {
-    if (!CFG.mute || !media) return;
-    try {
-      if (!media.muted) media.muted = true;
-      if (media.volume !== 0) media.volume = 0;
-      media.defaultMuted = true;
-      if (!media.hasAttribute('muted')) media.setAttribute('muted', 'muted');
-    } catch (e) { }
-  },
-
-  /** 被自动播放策略拦截时的处理：提示一次，并在用户交互后自动恢复 */
+  /**
+   * 被自动播放策略拦截时的处理：提示一次，并在用户交互后自动恢复。
+   *
+   * 为什么"过一阵又会恢复"：
+   *   浏览器的自动播放策略只认「用户手势」。脚本在 document-start 就监听了
+   *   pointerdown / mousedown / keydown / touchstart / **wheel** / click，
+   *   所以你哪怕只是滚动一下页面、切回窗口时带了一下滚轮、敲了个键，
+   *   都会被记成一次手势 —— 脚本随即重试 play()，于是播放恢复。
+   *   也就是说：**恢复不是浏览器自己变宽容了，而是你无意中给了它手势。**
+   *
+   *   反过来，如果一直没有任何交互，就一直是拦着的（脚本不会空转重试）。
+   */
   onAutoplayBlocked(media) {
+    this.autoplayBlockCount = (this.autoplayBlockCount || 0) + 1;
     if (this._autoplayNotified) return;
     this._autoplayNotified = true;
-    LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音或缺少用户手势）。');
-    UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下，脚本会自动继续（之后整段课程都不再需要点击）');
+    LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音且当前页面还没有用户手势）。');
+    UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下或滚一下，脚本会立刻继续（之后整段课程都不再需要交互）');
+    const since = Date.now();
     U.gesture.wait(0).then(() => {
-      LOG.ok('检测到你的点击，正在恢复自动播放…');
+      const waited = Math.round((Date.now() - since) / 1000);
+      LOG.ok(`检测到用户手势（等待 ${waited} 秒），正在恢复自动播放…`);
       this.autoplayBlocked = false;
       this._autoplayNotified = false;
+      this._autoplayRecoveredAt = Date.now();
       const m = Player.get() || media;
-      this.ensureMuted(m);
       try {
         const p = m.play();
-        if (p && p.catch) p.catch(() => { });
+        if (p && p.catch) {
+          p.then(() => LOG.ok('自动播放已恢复'))
+            .catch((e) => LOG.warn('手势后重试仍失败：' + ((e && e.name) || '')));
+        }
       } catch (e) { }
     });
   },

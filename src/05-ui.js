@@ -116,7 +116,6 @@ const UI = {
             <label class="chk"><input type="checkbox" id="c-next" ${CFG.autoNext ? 'checked' : ''}>自动跳转</label>
           </div>
           <div class="row">
-            <label class="chk"><input type="checkbox" id="c-mute" ${CFG.mute ? 'checked' : ''}>静音</label>
             <label class="chk"><input type="checkbox" id="c-ff" ${CFG.fastForward ? 'checked' : ''}>快进到结尾</label>
           </div>
           <button class="go" id="btn-go">开始刷课</button>
@@ -138,7 +137,7 @@ const UI = {
     this.els = {
       hd: q('hd'), bd: q('bd'), log: q('log'), go: q('btn-go'), min: q('btn-min'),
       page: q('s-page'), prog: q('s-prog'), rate: q('s-rate'), guard: q('s-guard'),
-      segRate: q('seg-rate'), cBg: q('c-bg'), cNext: q('c-next'), cMute: q('c-mute'), cFf: q('c-ff'),
+      segRate: q('seg-rate'), cBg: q('c-bg'), cNext: q('c-next'), cFf: q('c-ff'),
     };
 
     [1, 1.25, 1.5, 2, 3].forEach((r) => {
@@ -165,7 +164,6 @@ const UI = {
     });
     bind(this.els.cBg, 'background');
     bind(this.els.cNext, 'autoNext');
-    bind(this.els.cMute, 'mute');
     bind(this.els.cFf, 'fastForward');
 
     this.els.go.addEventListener('click', () => Run.toggle());
@@ -401,7 +399,7 @@ const UI = {
       `真实可见性 : hidden=${raw.hidden} visibilityState=${raw.visibilityState} hasFocus=${raw.hasFocus}`,
       `伪造后读取 : hidden=${raw.fakeHidden} visibilityState=${raw.fakeVis} hasFocus=${raw.fakeFocus}`,
       `speedUI    : xt-speedlist=${document.querySelectorAll('xt-speedlist').length} xt-speedbutton=${document.querySelectorAll('xt-speedbutton').length}`,
-      `cfg        : rate=${CFG.rate} mute=${CFG.mute} background=${CFG.background} autoNext=${CFG.autoNext}`,
+      `cfg        : rate=${CFG.rate} background=${CFG.background} autoNext=${CFG.autoNext}`,
       `---- 最近日志 ----`,
       ...this.logLines.slice(-25),
     ].join('\n');

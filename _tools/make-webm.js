@@ -56,7 +56,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const m = JSON.parse(ev.data);
       if (m.id && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.j(new Error(JSON.stringify(m.error))) : p.r(m.result); }
     };
-    const send = (method, params = {}, t = 120000) => new Promise((r, j) => {
+    const send = (method, params = {}, t = 400000) => new Promise((r, j) => {
       const i = ++id; pending.set(i, { r, j });
       ws.send(JSON.stringify({ id: i, method, params }));
       setTimeout(() => { if (pending.has(i)) { pending.delete(i); j(new Error('timeout ' + method)); } }, t);

@@ -47,7 +47,7 @@ const Run = {
       if (m) {
         // ① 倍速：只通过「真实点击播放器菜单」设置（见 syncSpeedUi 的说明）
         if (i % 2 === 0) this.syncSpeedUi(m);
-        // ② 静音 + 续播（防后台暂停）
+        // ② 续播（防后台暂停；脚本不碰音量/静音）
         if (CFG.background) Player.keepAlive(m);
         // ③ 统计已观看时长，用于卡死告警（seek 造成的大跳变不计入）
         const pos = Number(m.currentTime || 0);
@@ -385,13 +385,13 @@ const Boot = {
     // ① 最早：装载守卫（必须早于站点脚本注册监听）
     //    注意：iframe 内的播放器同样需要守卫与倍速，否则后台照样被暂停
     try { Guard.install(); } catch (e) { console.error('[刷课助手] 守卫装载失败', e); }
-    // 追踪用户手势：浏览器自动播放策略要求「有用户手势 或 已静音」，
+    // 追踪用户手势：浏览器自动播放策略要求有用户手势（脚本不再静音），
     // 有了手势记录，用户点过一次之后脚本才能顺利恢复自动播放。
     try { U.gesture.install(); } catch (e) { }
     try { Api.hook(); } catch (e) { }
 
     // ② 恢复用户设置
-    ['rate', 'mute', 'background', 'autoNext', 'fastForward', 'speedBridge'].forEach((k) => {
+    ['rate', 'background', 'autoNext', 'fastForward', 'speedBridge'].forEach((k) => {
       const v = STORE.get(k, undefined);
       if (v !== undefined) CFG[k] = v;
     });
@@ -522,6 +522,8 @@ const Boot = {
               error: m && m.error ? { code: m.error.code, message: m.error.message } : null,
               playFailCount: Player.playFailCount || 0,
               autoplayBlocked: !!Player.autoplayBlocked,
+              autoplayBlockCount: Player.autoplayBlockCount || 0,
+              autoplayRecoveredAt: Player._autoplayRecoveredAt || null,
               userGesture: { seen: U.gesture.seen, browserActive: U.gesture.browserSaysActive() },
               rateFixCount: Player.rateFixCount || 0,
               rateStats: Player.rateStats(),
