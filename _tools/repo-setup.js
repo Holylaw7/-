@@ -6,7 +6,9 @@
  * token 从环境变量 GITHUB_TOKEN 读取，绝不写入文件、绝不打印。
  */
 const TOKEN = process.env.GITHUB_TOKEN;
-const REPO = process.env.GITHUB_REPO || 'Holylaw7/-';
+// 仓库地址统一从 config.js 取，避免多处各写一份
+const CONFIG = require('./config');
+const REPO = process.env.GITHUB_REPO || CONFIG.repo;
 
 const DESCRIPTION = '长江雨课堂自动刷课用户脚本（篡改猴/油猴）：自动跳转下一节、锁定 2 倍速、'
   + '切换页面或最小化后台仍继续播放（防暂停/防降速/防挂机弹窗），自动跳过测验与作业。'

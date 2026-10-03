@@ -6,7 +6,9 @@
  * token 从环境变量 GITHUB_TOKEN 读取，绝不写入文件、绝不打印。
  */
 const TOKEN = process.env.GITHUB_TOKEN;
-const REPO = process.env.GITHUB_REPO || 'Holylaw7/-';
+// 仓库地址统一从 config.js 取，避免多处各写一份
+const CONFIG = require('./config');
+const REPO = process.env.GITHUB_REPO || CONFIG.repo;
 
 async function api(path, opts = {}) {
   const res = await fetch(`https://api.github.com${path}`, {

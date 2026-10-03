@@ -15,12 +15,12 @@
 **点这个链接即可安装**（篡改猴会弹出安装页，点「安装」）：
 
 ```
-https://raw.githubusercontent.com/Holylaw7/-/main/dist/changjiang-yuketang-auto.user.js
+https://raw.githubusercontent.com/Holylaw7/changjiang-yuketang-auto/main/dist/changjiang-yuketang-auto.user.js
 ```
 
 也可以：
 
-- 在 GitHub 上打开 [`dist/changjiang-yuketang-auto.user.js`](https://github.com/Holylaw7/-/blob/main/dist/changjiang-yuketang-auto.user.js) → 点右上角 **Raw** 按钮
+- 在 GitHub 上打开 [`dist/changjiang-yuketang-auto.user.js`](https://github.com/Holylaw7/changjiang-yuketang-auto/blob/main/dist/changjiang-yuketang-auto.user.js) → 点右上角 **Raw** 按钮
 - 或下载仓库后，把 `dist/changjiang-yuketang-auto.user.js` **拖进浏览器窗口**
 
 装好后**打开课程页按 F5 刷新**，右下角出现蓝色控制面板即成功。

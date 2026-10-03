@@ -43,6 +43,17 @@ function pick(name, envName, fallback) {
 }
 
 const CONFIG = {
+  /**
+   * 本项目的 GitHub 仓库（单一来源）。
+   *
+   * 脚本头部（src/00-header.txt）里的 @namespace / @homepageURL / @supportURL /
+   * @updateURL / @downloadURL，以及 README 里的安装链接，都应与这里保持一致。
+   * 改仓库名或换账号时，只需替换这些文件里的同一字符串（见 _tools/rename-repo.js），
+   * 不必再到各处零散地找。
+   */
+  repo: String(pick('repo', 'GITHUB_REPO_FULL', 'Holylaw7/changjiang-yuketang-auto')),
+  repoBranch: String(pick('repo-branch', 'GITHUB_REPO_BRANCH', 'main')),
+
   /** 雨课堂站点（长江雨课堂；换成你所在学校的入口即可） */
   origin: String(pick('origin', 'YKT_ORIGIN', 'https://changjiang.yuketang.cn')).replace(/\/+$/, ''),
   /** 教室号：学习日志 URL 里的那串数字 */
@@ -69,6 +80,11 @@ CONFIG.url = {
   video: (leafId, classroom) => CONFIG.origin + '/ai-workspace/lms-graph/' + (classroom || CONFIG.classroom) + '/video/' + leafId + '?is_chapter=1',
   activities: (page, classroom) => CONFIG.origin + '/v2/api/web/logs/learn/' + (classroom || CONFIG.classroom) + '?actype=-1&page=' + (page || 0) + '&offset=20&sort=-1',
   login: () => CONFIG.origin + '/web',
+  /** 本仓库在 GitHub 上的地址（页面 / Issues / raw 安装链接） */
+  repo: () => 'https://github.com/' + CONFIG.repo,
+  issues: () => 'https://github.com/' + CONFIG.repo + '/issues',
+  raw: (relPath) => 'https://raw.githubusercontent.com/' + CONFIG.repo + '/'
+    + CONFIG.repoBranch + '/' + String(relPath).replace(/^\/+/, ''),
 };
 
 CONFIG.mock = {
