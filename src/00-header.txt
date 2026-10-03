@@ -1,13 +1,12 @@
 // ==UserScript==
 // @name         长江雨课堂 · 自动刷课助手
 // @name:zh-CN   长江雨课堂 · 自动刷课助手
-// @namespace    https://github.com/local/changjiang-yuketang-auto
+// @namespace    https://github.com/Holylaw7/-
 // @version      1.1.3
 // @description  长江雨课堂自动刷课：自动跳转下一节、锁定 2 倍速、切换页面/最小化后仍然后台播放（防暂停 / 防降速 / 防挂机弹窗），并自动跳过测验与作业。
 // @description:zh-CN 长江雨课堂自动刷课：自动跳转下一节、锁定 2 倍速、切换页面后仍然后台播放。
-// @author       local
+// @author       Holylaw7
 // @license      MIT
-// @icon         https://changjiang.yuketang.cn/static/images/favicon.ico
 // @match        *://*.yuketang.cn/*
 // @match        *://*.yuketang.com/*
 // @match        *://*.xuetangx.com/*
@@ -15,4 +14,8 @@
 // @match        *://*.ykt.io/*
 // @run-at       document-start
 // @grant        unsafeWindow
+// @homepageURL  https://github.com/Holylaw7/-
+// @supportURL   https://github.com/Holylaw7/-/issues
+// @updateURL    https://raw.githubusercontent.com/Holylaw7/-/main/dist/changjiang-yuketang-auto.user.js
+// @downloadURL  https://raw.githubusercontent.com/Holylaw7/-/main/dist/changjiang-yuketang-auto.user.js
 // ==/UserScript==

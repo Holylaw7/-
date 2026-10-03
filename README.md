@@ -8,7 +8,39 @@
 
 ---
 
-## 一、安装
+## 一键安装
+
+前提：浏览器已安装 [篡改猴 / Tampermonkey](https://www.tampermonkey.net/)。
+
+**点这个链接即可安装**（篡改猴会弹出安装页，点「安装」）：
+
+```
+https://raw.githubusercontent.com/Holylaw7/-/main/dist/changjiang-yuketang-auto.user.js
+```
+
+也可以：
+
+- 在 GitHub 上打开 [`dist/changjiang-yuketang-auto.user.js`](https://github.com/Holylaw7/-/blob/main/dist/changjiang-yuketang-auto.user.js) → 点右上角 **Raw** 按钮
+- 或下载仓库后，把 `dist/changjiang-yuketang-auto.user.js` **拖进浏览器窗口**
+
+装好后**打开课程页按 F5 刷新**，右下角出现蓝色控制面板即成功。
+
+> 脚本已配置 `@updateURL` / `@downloadURL`，之后有新版篡改猴会自行提示更新。
+
+### 适用范围（请先确认）
+
+| 场景 | 能否使用 |
+|---|---|
+| 长江雨课堂下的**任意课程 / 任意班级** | ✅ 直接能用（教室号从网址自动识别，无需配置） |
+| 同一租户的其它学期、其它课程 | ✅ 直接能用 |
+| **其它学校自建的雨课堂部署** | ⚠️ 需实测。脚本依赖的「课程列表接口」与「播放器控件」是按长江雨课堂实测的，接口不同会导致无法自动选节 |
+| 只有图文 / 作业、没有视频的课程 | ⚠️ 脚本只自动播放**视频**，图文与作业会跳过 |
+
+**只支持视频小节**：视频自动播放 + 2 倍速 + 自动跳下一节；图文、作业、测验、讨论区一律跳过（不自动作答）。
+
+---
+
+## 一、安装（本地开发 / 手动方式）
 
 产物：`dist/changjiang-yuketang-auto.user.js`
 
