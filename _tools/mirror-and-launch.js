@@ -24,7 +24,8 @@ const EDGE = [
 ].find((p) => fs.existsSync(p));
 
 const SRC_ROOT = path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'User Data');
-const MIRROR_ROOT = process.env.YKT_MIRROR_DIR || 'E:\\刷课脚本\\_edge-debug-profile';
+const MIRROR_ROOT = process.env.YKT_MIRROR_DIR
+  || path.join(path.join(__dirname, '..'), '_edge-debug-profile');
 const PORT = Number(process.env.CDP_PORT || 9222);
 const REFRESH = process.argv.includes('--refresh');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

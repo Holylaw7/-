@@ -12,7 +12,8 @@ const EDGE = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
 ].find((p) => fs.existsSync(p));
-const MIRROR = 'E:\\刷课脚本\\_edge-debug-profile';
+const PROJECT_ROOT = path.join(__dirname, '..');
+const MIRROR = process.env.YKT_MIRROR_DIR || path.join(PROJECT_ROOT, '_edge-debug-profile');
 const TM_EXT = path.join(MIRROR, 'Default', 'Extensions', 'iikmkjmpaadaobahmlepeloendndfphd', '5.5.0_0');
 const PORT = 9222;
 const CLASSROOM = CONFIG.classroom;

@@ -3,7 +3,7 @@
  * 长江雨课堂 —— 本地仿真服务器 (mock)
  *
  * 目的：在没有登录态的情况下，复刻长江雨课堂视频播放页的真实 DOM 结构与
- *      「后台暂停 / 切屏降速」的反挂机逻辑，用来端到端验证刷课脚本。
+ *      「后台暂停 / 切屏降速」的反挂机逻辑，用于端到端验证本用户脚本。
  *
  * 复刻的关键行为（与真实站点一致）：
  *   1. DOM 使用 xt-* 自定义元素播放器  <xt-wrap>/<xt-controls>/<xt-speedbutton>/<xt-speedlist>
@@ -206,7 +206,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, PAGE_SHELL('长江雨课堂网页版-登录', ['/static/login.js'], `
         <div class="login-wrap">
           <h2>长江雨课堂（本地仿真）</h2>
-          <p>此页面用于验证刷课脚本，无需真实账号。</p>
+          <p>此页面用于验证用户脚本，无需真实账号。</p>
           <button id="btn-login" class="primary">一键登录</button>
         </div>`), { 'Content-Type': 'text/html; charset=utf-8' });
     }

@@ -119,7 +119,10 @@ if (updateUrl) console.log(`  @updateURL = ${updateUrl}`);
 
 // ---------------------------------------------------------------- 安装页
 function installHtml(file, version) {
-  let fileUrl = 'file:///' + file.replace(/\\/g, '/');
+  // 用相对路径，避免把某个人的绝对目录写进产物
+  const relFromDist = path.basename(file);
+  // install.html 与脚本产物同在 dist/ 下，所以相对文件名对任何目录都有效
+  const fileUrl = relFromDist;
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <title>安装 长江雨课堂 · 自动刷课助手</title>
@@ -172,7 +175,7 @@ function installHtml(file, version) {
   <ol>
     <li>打开 <a href="edge://extensions" target="_blank">edge://extensions</a>，确认篡改猴已启用</li>
     <li>点击篡改猴图标 → 「管理面板 / Dashboard」</li>
-    <li>把 <code>${file}</code> 这个文件直接<b>拖进浏览器窗口</b>，弹出安装页后点「安装」或「重新安装」</li>
+    <li>把 <code>dist/${relFromDist}</code> 这个文件直接<b>拖进浏览器窗口</b>，弹出安装页后点「安装」或「重新安装」</li>
     <li><b>回到课程页按 F5 刷新</b></li>
   </ol>
 </div>
@@ -181,7 +184,7 @@ function installHtml(file, version) {
   <h2>方式 B · 在篡改猴编辑器里整份替换（最不容易出错）</h2>
   <ol>
     <li>篡改猴面板 → 找到「长江雨课堂 · 自动刷课助手」→ 点进去</li>
-    <li>全选（<kbd>Ctrl</kbd>+<kbd>A</kbd>）删除，粘贴 <code>${file}</code> 的<b>全部内容</b></li>
+    <li>全选（<kbd>Ctrl</kbd>+<kbd>A</kbd>）删除，粘贴 <code>dist/${relFromDist}</code> 的<b>全部内容</b></li>
     <li><kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</li>
     <li>回到课程页按 <kbd>F5</kbd> 刷新</li>
   </ol>

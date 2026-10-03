@@ -14,7 +14,9 @@ const EDGE = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
 ].find((p) => fs.existsSync(p));
-const MIRROR = 'E:\\刷课脚本\\_edge-debug-profile';
+// 项目根由本文件位置推导，避免写死某个人的目录（本文件在 <根>/_tools/ 下）
+const PROJECT_ROOT = path.join(__dirname, '..');
+const MIRROR = process.env.YKT_MIRROR_DIR || path.join(PROJECT_ROOT, '_edge-debug-profile');
 const PORT = 9222;
 
 // 找镜像里的篡改猴解包目录（按扩展 ID 精确定位，不要靠 name 猜）

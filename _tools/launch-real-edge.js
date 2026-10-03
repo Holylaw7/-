@@ -75,7 +75,7 @@ function edgeProcesses() {
 
 方式一（推荐，你自己操作）：
   1. 关闭所有 Edge 窗口
-  2. 双击运行这个文件：E:\\刷课脚本\\_tools\\start-edge-debug.cmd
+  2. 双击运行这个文件：<项目根>\\_tools\\start-edge-debug.cmd
   3. Edge 会带着你的配置和调试端口重新打开
 
 方式二（我来做）：

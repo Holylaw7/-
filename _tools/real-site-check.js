@@ -126,7 +126,7 @@ const INSPECT = `(function () {
   说明 Edge 没有带调试端口启动。
 
   请任选其一：
-    · 双击 E:\\刷课脚本\\_tools\\start-edge-debug.cmd
+    · 双击 <项目根>\\_tools\\start-edge-debug.cmd
     · 或让我执行： node _tools/launch-real-edge.js --kill
 `);
     process.exit(1);

@@ -2,7 +2,9 @@
 chcp 65001 >nul
 title 启动「调试用 Edge 窗口」（可被脚本工具连接）
 
-set MIRROR=E:\刷课脚本\_edge-debug-profile
+rem  %~dp0 是本 .cmd 所在目录（项目根），调试配置放在其下的 _edge-debug-profile
+set ROOT=%~dp0
+set MIRROR=%ROOT%_edge-debug-profile
 set PORT=9222
 set EDGE=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 

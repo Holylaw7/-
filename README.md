@@ -454,7 +454,7 @@ npm run verify:paste   # 控制台粘贴版验证
 ## 六、目录结构
 
 ```
-E:\刷课脚本\
+<你的项目目录>\
 ├─ dist\
 │  ├─ changjiang-yuketang-auto.user.js   ← 安装这个（篡改猴版）
 │  ├─ console-paste.js                   ← 控制台粘贴版（应急用）

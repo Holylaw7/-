@@ -2,7 +2,9 @@
 chcp 65001 >nul
 title 启用「允许用户脚本」并启动调试窗口
 
-set MIRROR=E:\刷课脚本\_edge-debug-profile
+rem  %~dp0 是本 .cmd 所在目录（<根>\_tools\），上一级即项目根
+set ROOT=%~dp0..
+set MIRROR=%ROOT%\_edge-debug-profile
 set PORT=9222
 set EDGE=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
 if not exist "%EDGE%" set EDGE=C:\Program Files\Microsoft\Edge\Application\msedge.exe

@@ -16,7 +16,8 @@ const EDGE = [
 ].find((p) => fs.existsSync(p));
 const TM_ID = 'iikmkjmpaadaobahmlepeloendndfphd';
 const REAL_EXT = path.join(process.env.LOCALAPPDATA, 'Microsoft', 'Edge', 'User Data', 'Default', 'Extensions', TM_ID);
-const MIRROR = 'E:\\刷课脚本\\_edge-debug-profile';
+const PROJECT_ROOT = path.join(__dirname, '..');
+const MIRROR = process.env.YKT_MIRROR_DIR || path.join(PROJECT_ROOT, '_edge-debug-profile');
 const MIRROR_EXT = path.join(MIRROR, 'Default', 'Extensions', TM_ID);
 const PORT = 9222;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
