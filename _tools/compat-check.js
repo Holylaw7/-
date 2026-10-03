@@ -31,13 +31,15 @@ const us = fs.readFileSync(path.join(__dirname, '..', 'dist', 'changjiang-yuketa
 const matches = [...us.matchAll(/^\/\/ @match\s+(\S+)/gm)].map((m) => m[1]);
 const regs = matches.map((r) => [r, matchPatternToRegExp(r)]).filter(([, re]) => re);
 
-/* 常见的雨课堂入口与页面形态 */
+/* 常见的雨课堂入口与页面形态。
+ * 下面所有教室号/小节号/签名都是**虚构值**，只用于验证 @match 与路由识别规则，
+ * 与任何真实课程无关（真实值请放在 _tools/local.config.json，该文件不提交）。 */
 const SAMPLES = [
   ['长江雨课堂 · 目录', 'https://changjiang.yuketang.cn/v2/web/studentLog/10000001'],
   ['长江雨课堂 · 播放', 'https://changjiang.yuketang.cn/ai-workspace/lms-graph/10000001/video/90000001?is_chapter=1'],
   ['雨课堂主站 · 目录', 'https://www.yuketang.cn/v2/web/studentLog/10000001'],
   ['雨课堂主站 · 播放', 'https://www.yuketang.cn/ai-workspace/lms-graph/10000001/video/90000001'],
-  ['旧版路径 · 学习内容', 'https://changjiang.yuketang.cn/pro/lms/SIGNPLACEHOLDER/10000001/studycontent'],
+  ['旧版路径 · 学习内容', 'https://changjiang.yuketang.cn/pro/lms/demo-sign-value/10000001/studycontent'],
   ['学堂在线', 'https://www.xuetangx.com/course/xxx/10000001'],
   ['学校自建入口(示例)', 'https://yuketang.example.edu.cn/v2/web/studentLog/10000001'],
 ];
