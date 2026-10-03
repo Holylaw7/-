@@ -495,6 +495,11 @@ const Boot = {
         configurable: true, enumerable: false,
         value: {
           version: YKT.version,
+          /** 一键自检（返回可复制的纯文本报告） */
+          verify: () => Verify.report(),
+          /** 只跑检查、返回结构化结果 */
+          verifyResults: () => Verify.run(),
+          config: CFG,
           get state() {
             const m = Player.get();
             const r = U.route();
@@ -546,5 +551,3 @@ const Boot = {
     } catch (e) { }
   },
 };
-
-Boot.init();

@@ -16,7 +16,7 @@ const ROOT = __dirname;
 const SRC = path.join(ROOT, 'src');
 const DIST = path.join(ROOT, 'dist');
 const HEADER = path.join(SRC, '00-header.txt');
-const ORDER = ['01-core.js', '02-guard.js', '03-player.js', '03b-speed-bridge.js', '04-nav.js', '05-ui.js', '06-run.js'];
+const ORDER = ['01-core.js', '02-guard.js', '03-player.js', '03b-speed-bridge.js', '04-nav.js', '05-ui.js', '06-run-body.js', '07-verify.js', '06-run-boot.js'];
 const OUT_NAME = 'changjiang-yuketang-auto.user.js';
 
 const argv = process.argv.slice(2);
@@ -149,19 +149,26 @@ function installHtml(file, version) {
 </div>
 
 <div class="card ok">
-  <h2>✅ 最稳的验证方式：控制台粘贴版（不需要重装、立刻生效）</h2>
-  <p>先用这个确认功能是否正常，能立刻排除安装环节的所有干扰：</p>
+  <h2>✅ 最省事的运行方式：一键复制脚本（先试这个）</h2>
+  <p>不用重装、不用找文件，点一下按钮就把脚本复制到剪贴板：</p>
+  <p style="margin:10px 0">
+    <button class="btn g" id="copybtn" style="border:0;cursor:pointer;font-size:14px">📋 一键复制脚本到剪贴板</button>
+    <span id="copystat" class="tip" style="margin-left:10px"></span>
+  </p>
   <ol>
     <li>在课程页按 <kbd>F12</kbd> → 切到「<b>控制台 / Console</b>」</li>
     <li>若提示 <code>Warning: Don't paste code...</code>，先在控制台输入 <code>allow pasting</code> 回车</li>
-    <li>打开 <code>dist\\console-paste.js</code>，<b>全文复制</b>粘贴进控制台，回车</li>
+    <li>在控制台按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 粘贴，回车</li>
     <li>右下角出现控制面板即成功；控制台会打印 <code>[刷课助手]</code> 开头的日志</li>
   </ol>
-  <p class="tip">缺点：刷新页面后失效，需要重新粘贴。确认没问题后再去修篡改猴安装。</p>
+  <p><b>验证功能是否正常</b>：面板底部点「<b>自检并复制结果</b>」——它会跑一遍完整检查
+  （播放器接管 / 倍速三处一致 / 静音 / 后台守卫 / 自动播放策略 / 接口取课程列表 / 自动跳转），
+  并把结论复制到剪贴板，直接粘贴出来就能看到每项的通过情况。</p>
+  <p class="tip">本页需与脚本文件在同一目录。若浏览器限制读取本地文件，请改用下面的手动方式。</p>
 </div>
 
 <div class="card">
-  <h2>方式 A · 拖拽安装（推荐）</h2>
+  <h2>方式 A · 拖拽安装（长期使用推荐）</h2>
   <ol>
     <li>打开 <a href="edge://extensions" target="_blank">edge://extensions</a>，确认篡改猴已启用</li>
     <li>点击篡改猴图标 → 「管理面板 / Dashboard」</li>
@@ -196,7 +203,47 @@ function installHtml(file, version) {
     <li>点篡改猴图标：当前页若显示运行中的脚本数为 <b>1</b>，说明已注入</li>
     <li>视频开始以 <b>2.00X</b> 静音播放</li>
   </ul>
-  <p class="tip">若还是不行：点面板底部的「<b>复制诊断信息</b>」按钮，把内容发我即可定位。</p>
+  <p><b>最直接的验证</b>：点面板底部的「<b>自检并复制结果</b>」，然后把它复制出来的内容粘贴出来即可。</p>
+  <p class="tip">若还是不行：点「<b>复制诊断信息</b>」按钮，把内容发我即可定位。</p>
 </div>
+
+<script>
+// 一键复制脚本到剪贴板：本页与脚本同目录，直接读取 console-paste.js
+document.getElementById('copybtn').addEventListener('click', async function () {
+  var st = document.getElementById('copystat');
+  var btn = this;
+  st.textContent = '读取中…';
+  try {
+    var res = await fetch('console-paste.js');
+    var text = await res.text();
+    var ok = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch (e) { ok = false; }
+    if (!ok) {
+      // 回退方案：用临时 textarea + execCommand
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      ta.remove();
+    }
+    if (ok) {
+      st.textContent = '✓ 已复制（' + Math.round(text.length / 1024) + ' KB），去课程页控制台粘贴';
+      btn.textContent = '✓ 已复制';
+    } else {
+      st.textContent = '✗ 浏览器拒绝了剪贴板访问，请手动打开 console-paste.js 复制';
+    }
+  } catch (e) {
+    st.textContent = '✗ 读取失败（' + e.message + '），请手动打开 console-paste.js 复制';
+  }
+  setTimeout(function () { btn.textContent = '📋 一键复制脚本到剪贴板'; }, 4000);
+});
+</script>
 </body></html>`;
 }

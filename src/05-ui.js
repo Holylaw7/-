@@ -124,7 +124,10 @@ const UI = {
           <div class="hd2"><span>运行日志</span><span id="s-guard">守卫就绪</span></div>
           <div class="log" id="log"></div>
           <div class="row" style="gap:6px">
+            <button class="mini" id="btn-verify" style="flex:1">自检并复制结果</button>
             <button class="mini" id="btn-diag" style="flex:1">复制诊断信息</button>
+          </div>
+          <div class="row" style="gap:6px; margin-top:6px">
             <button class="mini" id="btn-help" style="flex:1">使用帮助</button>
           </div>
         </div>
@@ -169,6 +172,8 @@ const UI = {
     this.els.min.addEventListener('click', () => this.toggleCollapse());
     const diagBtn = sh.getElementById('btn-diag');
     if (diagBtn) diagBtn.addEventListener('click', () => this.copyDiag(diagBtn));
+    const verifyBtn = sh.getElementById('btn-verify');
+    if (verifyBtn) verifyBtn.addEventListener('click', () => this.runVerify(verifyBtn));
     const helpBtn = sh.getElementById('btn-help');
     if (helpBtn) helpBtn.addEventListener('click', () => this.toggleHelp());
     const helpClose = sh.getElementById('help-close');
@@ -426,6 +431,62 @@ const UI = {
       const old = btn.textContent;
       btn.textContent = ok ? '✓ 已复制到剪贴板' : '✗ 已输出到控制台（F12）';
       setTimeout(() => { btn.textContent = old; }, 2500);
+    }
+  },
+
+  /**
+   * 一键自检：在真实站点上跑完整验证，把结论写进日志并复制到剪贴板。
+   * 这是「不需要外部工具也能验证」的手段 —— 免去开调试端口/装额外程序。
+   */
+  async runVerify(btn) {
+    const old = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = '自检中…'; btn.disabled = true; }
+    LOG.info('开始自检（约 3 秒）…');
+    let text = '';
+    try {
+      text = await Verify.report();
+    } catch (e) {
+      text = '自检过程出错：' + (e && e.message);
+    }
+
+    // 结论写进面板日志，方便直接看到
+    const { fail, pass, warn } = (() => {
+      const m = text.match(/通过 (\d+) \/ 失败 (\d+) \/ 提示 (\d+)/);
+      return m ? { pass: +m[1], fail: +m[2], warn: +m[3] } : { pass: 0, fail: 0, warn: 0 };
+    })();
+    text.split('\n').filter((l) => /^[✓✗·]/.test(l)).forEach((l) => {
+      if (l.startsWith('✗')) LOG.warn(l);
+      else if (l.startsWith('✓')) LOG.ok(l);
+      else LOG.info(l);
+    });
+    LOG[fail === 0 ? 'ok' : 'warn'](`自检完成：通过 ${pass} / 失败 ${fail} / 提示 ${warn}`);
+
+    // 复制到剪贴板
+    let copied = false;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch (e) { copied = false; }
+    if (!copied) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        copied = document.execCommand('copy');
+        ta.remove();
+      } catch (e) { copied = false; }
+    }
+    if (!copied) console.log(text);
+    LOG.info(copied ? '自检结果已复制到剪贴板，直接粘贴反馈即可' : '剪贴板不可用，结果已输出到控制台（F12）');
+
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = copied ? (fail === 0 ? '✓ 通过，已复制' : `✗ ${fail} 项失败，已复制`) : '结果见控制台';
+      setTimeout(() => { btn.textContent = old; }, 3000);
     }
   },
 };

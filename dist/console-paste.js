@@ -1,5 +1,5 @@
 /*
- * 长江雨课堂 · 自动刷课助手 —— 控制台粘贴版 v1.1.1
+ * 长江雨课堂 · 自动刷课助手 —— 控制台粘贴版 v1.1.2
  *
  * 用法（篡改猴因任何原因没生效时的应急方案）：
  *   1. 在课程页按 F12 打开开发者工具 → 切到「控制台 / Console」
@@ -21,15 +21,26 @@
   // ============================================================================
   const YKT = {
     name: '长江雨课堂 · 自动刷课助手',
-    version: '1.1.1',
+    version: '1.1.2',
     debug: true,
   };
 
   const CFG = {
     /** 目标倍速 */
     rate: 2,
-    /** 是否静音（后台播放必需，浏览器禁止非静音自动播放） */
-    mute: true,
+    /**
+     * 是否由脚本静音。
+     *
+     * 默认关闭（v1.1.2 起）。原因：
+     *   · 站点会**反复取消静音**（真站实测约每 2 秒一次），脚本若持续对抗
+     *     （设回去 / 拦截属性写入），这种拉锯本身就可能被站点判定为异常；
+     *   · 浏览器自带标签页静音，想安静时右键标签页「使标签页静音」即可，更干净。
+     *
+     * 代价：静音是浏览器自动播放策略的豁免条件之一。关闭后首次进入播放页
+     * 可能被自动播放策略拦下；此时脚本会提示「点一下页面」，点过之后整段课程
+     * 都不再需要交互。需要免交互时把这项打开即可。
+     */
+    mute: false,
     /** 是否开启后台/切屏防暂停 */
     background: true,
     /** 是否启用「倍速点击桥」：由外部本地工具（_tools/speed-bridge.js）用**真实鼠标**
@@ -510,6 +521,19 @@
         }
       }
 
+      // ------------------------------------------------- ④ 静音：不干预
+      //
+      //  真站实测：站点会**反复取消静音**（约每 2 秒一次，16 秒内试了 50 多次）。
+      //  早期实现为了保住静音，在属性层拦截了站点的 muted 写入。但那种持续对抗：
+      //    · 会让站点每次想调音量都被挡回去，行为异常；
+      //    · 拉锯本身可能被站点的异常检测注意到。
+      //
+      //  因此 v1.1.2 起改为**完全不干预音量/静音**：
+      //    · 脚本默认不静音（CFG.mute 默认 false）；
+      //    · 想安静就用浏览器自带的「使标签页静音」，比脚本对抗干净得多；
+      //    · 需要免交互自动播放的用户可自行打开面板里的「静音」选项，
+      //      此时也只在需要时设一次，不做属性拦截。
+
       this.log('后台播放守卫已装载：事件封堵 + 属性伪造 + pause 拦截');
 
       // ------------------------------------------------- ④ 自检
@@ -866,21 +890,22 @@
     },
 
     /**
-     * 后台保活：静音 + 自动续播。
+     * 后台保活：按需静音 + 自动续播。
      *
-     * 关于「自动播放被网站拦截」（真实站点上确实会遇到）：
+     * 关于静音（v1.1.2 起默认不做）：
+     *   真站实测站点会反复取消静音（约每 2 秒一次）。脚本若持续对抗，
+     *   这种拉锯可能被站点注意到；而浏览器自带「使标签页静音」更干净。
+     *   所以默认不静音；用户在面板勾选「静音」后才设一次。
+     *
+     * 关于「自动播放被网站拦截」：
      *   浏览器的自动播放策略要求「用户手势」或「静音」二者之一。
-     *   脚本会静音，但站点的播放器可能在之后又把它取消静音，
-     *   或者媒体元素尚未加载到可播放状态，于是 play() 被
-     *   NotAllowedError 拒绝。
-     *
-     *   关键是：被拒绝时**不要每 500ms 硬重试**（既无效又刷屏），
-     *   而是标记为「被拦截」，等用户第一次交互后再自动恢复播放。
+     *   默认不静音时首次可能被拦，此时标记 autoplayBlocked 并**停止无效重试**，
+     *   提示用户点一下页面（记到手势后自动恢复播放）。
      */
     keepAlive(media) {
       if (!media) return;
       try {
-        this.ensureMuted(media);
+        if (CFG.mute) this.ensureMuted(media);
 
         const dur = Number(media.duration);
         const nearEnd = Number.isFinite(dur) && dur > 1 && dur - media.currentTime <= 0.4;
@@ -1815,7 +1840,10 @@
             <div class="hd2"><span>运行日志</span><span id="s-guard">守卫就绪</span></div>
             <div class="log" id="log"></div>
             <div class="row" style="gap:6px">
+              <button class="mini" id="btn-verify" style="flex:1">自检并复制结果</button>
               <button class="mini" id="btn-diag" style="flex:1">复制诊断信息</button>
+            </div>
+            <div class="row" style="gap:6px; margin-top:6px">
               <button class="mini" id="btn-help" style="flex:1">使用帮助</button>
             </div>
           </div>
@@ -1860,6 +1888,8 @@
       this.els.min.addEventListener('click', () => this.toggleCollapse());
       const diagBtn = sh.getElementById('btn-diag');
       if (diagBtn) diagBtn.addEventListener('click', () => this.copyDiag(diagBtn));
+      const verifyBtn = sh.getElementById('btn-verify');
+      if (verifyBtn) verifyBtn.addEventListener('click', () => this.runVerify(verifyBtn));
       const helpBtn = sh.getElementById('btn-help');
       if (helpBtn) helpBtn.addEventListener('click', () => this.toggleHelp());
       const helpClose = sh.getElementById('help-close');
@@ -2119,8 +2149,64 @@
         setTimeout(() => { btn.textContent = old; }, 2500);
       }
     },
+
+    /**
+     * 一键自检：在真实站点上跑完整验证，把结论写进日志并复制到剪贴板。
+     * 这是「不需要外部工具也能验证」的手段 —— 免去开调试端口/装额外程序。
+     */
+    async runVerify(btn) {
+      const old = btn ? btn.textContent : '';
+      if (btn) { btn.textContent = '自检中…'; btn.disabled = true; }
+      LOG.info('开始自检（约 3 秒）…');
+      let text = '';
+      try {
+        text = await Verify.report();
+      } catch (e) {
+        text = '自检过程出错：' + (e && e.message);
+      }
+
+      // 结论写进面板日志，方便直接看到
+      const { fail, pass, warn } = (() => {
+        const m = text.match(/通过 (\d+) \/ 失败 (\d+) \/ 提示 (\d+)/);
+        return m ? { pass: +m[1], fail: +m[2], warn: +m[3] } : { pass: 0, fail: 0, warn: 0 };
+      })();
+      text.split('\n').filter((l) => /^[✓✗·]/.test(l)).forEach((l) => {
+        if (l.startsWith('✗')) LOG.warn(l);
+        else if (l.startsWith('✓')) LOG.ok(l);
+        else LOG.info(l);
+      });
+      LOG[fail === 0 ? 'ok' : 'warn'](`自检完成：通过 ${pass} / 失败 ${fail} / 提示 ${warn}`);
+
+      // 复制到剪贴板
+      let copied = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (e) { copied = false; }
+      if (!copied) {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.cssText = 'position:fixed;opacity:0';
+          document.body.appendChild(ta);
+          ta.select();
+          copied = document.execCommand('copy');
+          ta.remove();
+        } catch (e) { copied = false; }
+      }
+      if (!copied) console.log(text);
+      LOG.info(copied ? '自检结果已复制到剪贴板，直接粘贴反馈即可' : '剪贴板不可用，结果已输出到控制台（F12）');
+
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = copied ? (fail === 0 ? '✓ 通过，已复制' : `✗ ${fail} 项失败，已复制`) : '结果见控制台';
+        setTimeout(() => { btn.textContent = old; }, 3000);
+      }
+    },
   };
-  // ------------------------------ src/06-run.js ------------------------------
+  // ------------------------------ src/06-run-body.js ------------------------------
   // ============================================================================
   //  模块 6/6：运行控制器（状态机 + 自动跳转 + 后台保活循环）
   // ============================================================================
@@ -2618,6 +2704,11 @@
           configurable: true, enumerable: false,
           value: {
             version: YKT.version,
+            /** 一键自检（返回可复制的纯文本报告） */
+            verify: () => Verify.report(),
+            /** 只跑检查、返回结构化结果 */
+            verifyResults: () => Verify.run(),
+            config: CFG,
             get state() {
               const m = Player.get();
               const r = U.route();
@@ -2669,6 +2760,154 @@
       } catch (e) { }
     },
   };
+  // ------------------------------ src/07-verify.js ------------------------------
+  // ============================================================================
+  //  模块 7：自检（在真实站点上一键跑完整验证，结果直接显示 + 可复制）
+  // ============================================================================
+  //
+  //  为什么要有它：真实站点需要登录态，外部工具不一定能连上浏览器
+  //  （Edge 在默认配置目录上禁止开启调试端口）。把验证做进脚本本身，
+  //  你在面板上点一下就能得到全部结论，也能一键复制发给别人排查。
+  //
+  const Verify = {
+    results: [],
 
+    reset() { this.results = []; },
+
+    add(name, ok, detail) {
+      this.results.push({ name, ok: ok === null ? null : !!ok, detail: detail === undefined ? '' : String(detail) });
+      return ok;
+    },
+
+    /** 跑完整自检，返回 { pass, fail, warn, lines } */
+    async run() {
+      this.reset();
+      const r = U.route();
+      const m = Player.get();
+
+      // ---------- 1. 基础环境 ----------
+      this.add('脚本已注入（顶层文档）', !U.inIframe(), U.inIframe() ? '当前在 iframe 内，请到顶层页面运行' : location.pathname);
+      this.add('页面类型识别', r.isPlayPage || r.isLogPage,
+        r.isPlayPage ? `播放页 (leaf=${r.leafId || '?'})` : r.isLogPage ? '课程目录页' : `未识别：${location.pathname}`);
+      this.add('教室号识别', !!r.classroomId, r.classroomId || '未识别到教室号');
+
+      // ---------- 2. 播放器接管 ----------
+      this.add('已捕获播放器媒体元素', !!m, m ? `${m.tagName}${m.id ? '#' + m.id : ''}` : '未找到 video/audio');
+
+      if (m) {
+        const rate = Number(m.playbackRate);
+        this.add(`倍速已锁定为 ${CFG.rate}x`, Math.abs(rate - CFG.rate) < 0.01,
+          `playbackRate=${rate}`);
+
+        const uiMatches = Player.speedUiMatches();
+        const uiVal = Player.speedUiValue();
+        this.add('播放器界面倍速与目标一致', uiMatches === true,
+          uiVal === null ? '读不到界面倍速（不影响实际播放）' : `界面显示 ${uiVal}X`);
+
+        // 站点内部值（能读到就一并报告，读不到不算失败）
+        let optVal = null;
+        try {
+          const root = document.querySelector('.xt_video_player_container, .xtplayer, .video-box');
+          const p = root && root.__vue__ && root.__vue__.$data && root.__vue__.$data.player;
+          optVal = p && p.options && p.options.speed ? p.options.speed.value : null;
+        } catch (e) { }
+        if (optVal !== null) {
+          this.add('站点内部倍速值一致', Math.abs(Number(optVal) - CFG.rate) < 0.01, `内部值=${optVal}`);
+        } else {
+          this.add('站点内部倍速值一致', null, '读不到内部值（正常，不同播放器版本结构不同）');
+        }
+
+        // 静音：默认关闭。只校验「实际状态与设置一致」，不强制要求静音。
+        // 关闭静音是 v1.1.2 的默认选择 —— 站点会反复取消静音，脚本持续对抗
+        // 反而可能被判定异常；想安静时用浏览器自带的「使标签页静音」更干净。
+        const muted = !!m.muted || Number(m.volume) === 0;
+        this.add(CFG.mute ? '已静音（按你的设置）' : '静音已关闭（按你的设置）',
+          CFG.mute ? muted : !muted,
+          CFG.mute
+            ? `muted=${m.muted} volume=${m.volume}`
+            : `muted=${m.muted} volume=${m.volume}（需要安静可右键标签页选「使标签页静音」）`);
+
+        this.add('视频正在播放', !m.paused, m.paused ? `paused=true（playFail=${Player.playFailCount || 0}）` : `currentTime=${m.currentTime.toFixed(1)}`);
+
+        // ---------- 3. 自动播放策略 ----------
+        const blocked = !!Player.autoplayBlocked;
+        this.add('未被自动播放策略拦截', !blocked,
+          blocked ? '被拦截：请在本页点一下即可恢复' : `手势已记录=${U.gesture.has()}`);
+        this.add('用户手势状态', null,
+          `脚本记录=${U.gesture.seen}  浏览器判定=${U.gesture.browserSaysActive()}`);
+
+        // ---------- 4. 真实推进（1.5 秒观察） ----------
+        const t0 = Number(m.currentTime);
+        const paused0 = m.paused;
+        await U.sleep(1500);
+        const t1 = Number(m.currentTime);
+        const advanced = t1 - t0;
+        const expect = paused0 ? 0 : 1.5 * CFG.rate;
+        this.add('播放进度真实推进（2 倍速生效）', paused0 ? null : advanced > expect * 0.5,
+          `1.5 秒内前进 ${advanced.toFixed(2)} 秒（${CFG.rate}x 预期约 ${expect.toFixed(1)} 秒）`);
+      }
+
+      // ---------- 5. 完成判定信号 ----------
+      const txt = Player.readProgressText ? Player.readProgressText() : null;
+      this.add('站点完成标记可读', true, txt || '（当前页面没有该标记）');
+      const pct = Player.readProgress();
+      this.add('本节进度可读', pct !== null && pct !== undefined, `${pct}%`);
+
+      // ---------- 6. 后台守卫 ----------
+      const st = Guard.selfTest || {};
+      this.add('后台守卫已装载', !!Guard.active,
+        `拦截事件=${Guard.stats.blockedEvents} 拦截pause=${Guard.stats.blockedPause} 伪造读取=${Guard.stats.fakeReads}`);
+      this.add('事件拦截自检通过（切屏/失焦无法送达站点）', st.ok === true,
+        st.ok === undefined ? '未执行' : `原生投递可达=${st.rawDelivered} 拦截后可达=${st.blockedDelivered}`);
+      this.add('站点曾尝试暂停播放器（守卫已拦下）', null,
+        `累计拦截 pause() ${Guard.stats.blockedPause} 次、切屏类事件 ${Guard.stats.blockedEvents} 次`);
+
+      // ---------- 7. 导航能力 ----------
+      const playlist = Nav.loadPlaylist ? Nav.loadPlaylist() : null;
+      const listLen = playlist ? playlist.length : 0;
+      this.add('课程列表已通过接口获取', listLen > 0, listLen > 0 ? `共 ${listLen} 项` : '尚未获取（目录页首次运行时会拉取）');
+      const nextUrl = Nav.nextFromPlaylist ? Nav.nextFromPlaylist() : null;
+      this.add('能算出下一节的地址', listLen === 0 ? null : !!nextUrl,
+        nextUrl ? nextUrl.replace(location.origin, '').slice(0, 80) : (listLen ? '已是列表最后一节' : '需先获取列表'));
+      this.add('自动跳转已开启', !!CFG.autoNext, CFG.autoNext ? '开启' : '已关闭');
+
+      // ---------- 8. 版本与设置 ----------
+      this.add('脚本版本', null, YKT.version + (YKT.updateUrl ? '' : ''));
+
+      const pass = this.results.filter((x) => x.ok === true).length;
+      const fail = this.results.filter((x) => x.ok === false).length;
+      const warn = this.results.filter((x) => x.ok === null).length;
+
+      const lines = this.results.map((x) => {
+        const mark = x.ok === true ? '✓' : x.ok === false ? '✗' : '·';
+        return `${mark} ${x.name}${x.detail ? '  — ' + x.detail : ''}`;
+      });
+
+      return { pass, fail, warn, lines, results: this.results };
+    },
+
+    /** 生成可复制的纯文本报告 */
+    async report() {
+      const head = [
+        '===== 长江雨课堂自动刷课助手 · 真实站点自检 =====',
+        `时间   : ${new Date().toLocaleString()}`,
+        `版本   : ${YKT.version}`,
+        `页面   : ${location.href.slice(0, 150)}`,
+        `环境   : ${navigator.userAgent.slice(0, 120)}`,
+        '',
+      ];
+      const { pass, fail, warn, lines } = await this.run();
+      const tail = [
+        '',
+        `结果   : 通过 ${pass} / 失败 ${fail} / 提示 ${warn}`,
+        fail === 0 ? '结论   : 全部关键项通过' : '结论   : 存在失败项，见上方 ✗',
+        '',
+        '--- 详细状态 ---',
+        JSON.stringify(window.__yktTool ? window.__yktTool.state : {}, null, 1),
+      ];
+      return head.concat(lines, tail).join('\n');
+    },
+  };
+  // ------------------------------ src/06-run-boot.js ------------------------------
   Boot.init();
 })();

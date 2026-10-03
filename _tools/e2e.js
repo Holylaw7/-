@@ -20,7 +20,8 @@ const path = require('path');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const CDP_PORT = 9333;
 const APP = `http://127.0.0.1:${process.env.MOCK_PORT || 8099}`;
-const CLASSROOM = CONFIG.mock.classroom;   // 仿真教室号，与真实课程无关
+const CLASSROOM = CONFIG.mock.classroom;
+const CFIG_MUTE = !!CONFIG.mute;   // 仿真教室号，与真实课程无关
 const USERSCRIPT = path.join(__dirname, '..', 'dist', 'changjiang-yuketang-auto.user.js');
 const SHOTS = path.join(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -260,7 +261,10 @@ async function serverState() {
     check('脚本已掌握播放器', p.mediaTag !== undefined && p.mediaTag !== null, `media=${p.mediaTag}`);
     check('倍速已锁定为 2x', Math.abs(Number(p.rate) - 2) < 0.01, `playbackRate=${p.rate}`);
     check('视频处于播放状态', p.paused === false, `paused=${p.paused}, readyState=${p.readyState}, playFail=${p.playFailCount}, mediaError=${JSON.stringify(p.error)}`);
-    check('已自动静音（后台自动播放前提）', p.muted === true);
+    // 静音自 v1.1.2 起默认关闭（避免与站点反复对抗），仅在开启时才校验
+    // 静音自 v1.1.2 起默认关闭（避免与站点反复对抗），因此按设置值校验
+    check('静音状态符合设置', CFIG_MUTE ? p.muted === true : p.muted === false,
+      'CFG.mute=' + CFIG_MUTE + ', muted=' + p.muted);
 
     await main.shot('01-播放中.png');
 
@@ -317,6 +321,25 @@ async function serverState() {
       `14.5s 时 t=${after.t}, paused=${after.paused}, rate=${after.rate}`);
     const bgLeaves = [...new Set(valid.map((x) => x.leaf).filter(Boolean))];
     check('后台期间经过了多个小节', bgLeaves.length >= 2, `经过小节=${JSON.stringify(bgLeaves)}`);
+
+    // ---- 脚本自带的一键自检（面板上「自检并复制结果」用的就是它） ----
+    console.log(`[${ts()}] 运行脚本自带的真实站点自检…`);
+    let vd = {};
+    try {
+      const raw = await main.eval(`(async function(){
+        if (!window.__yktTool || !window.__yktTool.verifyResults) return { err: 'no verify api' };
+        var r = await window.__yktTool.verifyResults();
+        return { pass: r.pass, fail: r.fail, warn: r.warn, lines: r.lines, results: r.results };
+      })()`, true);
+      // main.eval 返回 { value } 包装；同时兼容直接返回值与错误
+      const got = (raw && typeof raw === 'object' && 'value' in raw) ? raw.value : raw;
+      if (raw && raw.error) vd = { err: String(raw.error).slice(0, 140) };
+      else vd = (got && typeof got === 'object') ? got : { err: 'unexpected: ' + JSON.stringify(got).slice(0, 120) };
+    } catch (e) { vd = { err: String(e).slice(0, 140) }; }
+
+    if (vd.lines) vd.lines.forEach((l) => console.log('      ' + l));
+    check('脚本自带自检全部通过', typeof vd.fail === 'number' && vd.fail === 0,
+      vd.err ? vd.err : `通过 ${vd.pass} / 失败 ${vd.fail} / 提示 ${vd.warn}`);
 
     // ---- 恢复前台，等全部刷完 ----
     console.log(`[${ts()}] 切回播放页，等待自动刷完整章…`);

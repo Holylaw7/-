@@ -1,6 +1,6 @@
 {
   "name": "changjiang-yuketang-auto",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "长江雨课堂自动刷课用户脚本（自动跳转 / 2倍速 / 后台播放）+ 本地仿真验证环境",
   "scripts": {

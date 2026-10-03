@@ -297,21 +297,22 @@ const Player = {
   },
 
   /**
-   * 后台保活：静音 + 自动续播。
+   * 后台保活：按需静音 + 自动续播。
    *
-   * 关于「自动播放被网站拦截」（真实站点上确实会遇到）：
+   * 关于静音（v1.1.2 起默认不做）：
+   *   真站实测站点会反复取消静音（约每 2 秒一次）。脚本若持续对抗，
+   *   这种拉锯可能被站点注意到；而浏览器自带「使标签页静音」更干净。
+   *   所以默认不静音；用户在面板勾选「静音」后才设一次。
+   *
+   * 关于「自动播放被网站拦截」：
    *   浏览器的自动播放策略要求「用户手势」或「静音」二者之一。
-   *   脚本会静音，但站点的播放器可能在之后又把它取消静音，
-   *   或者媒体元素尚未加载到可播放状态，于是 play() 被
-   *   NotAllowedError 拒绝。
-   *
-   *   关键是：被拒绝时**不要每 500ms 硬重试**（既无效又刷屏），
-   *   而是标记为「被拦截」，等用户第一次交互后再自动恢复播放。
+   *   默认不静音时首次可能被拦，此时标记 autoplayBlocked 并**停止无效重试**，
+   *   提示用户点一下页面（记到手势后自动恢复播放）。
    */
   keepAlive(media) {
     if (!media) return;
     try {
-      this.ensureMuted(media);
+      if (CFG.mute) this.ensureMuted(media);
 
       const dur = Number(media.duration);
       const nearEnd = Number.isFinite(dur) && dur > 1 && dur - media.currentTime <= 0.4;

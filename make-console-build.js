@@ -16,7 +16,7 @@ const vm = require('vm');
 const ROOT = __dirname;
 const DIST = path.join(ROOT, 'dist');
 const SRC = path.join(ROOT, 'src');
-const ORDER = ['01-core.js', '02-guard.js', '03-player.js', '03b-speed-bridge.js', '04-nav.js', '05-ui.js', '06-run.js'];
+const ORDER = ['01-core.js', '02-guard.js', '03-player.js', '03b-speed-bridge.js', '04-nav.js', '05-ui.js', '06-run-body.js', '07-verify.js', '06-run-boot.js'];
 const OUT = path.join(DIST, 'console-paste.js');
 
 const read = (p) => fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '');
