@@ -59,9 +59,10 @@ const Verify = {
       // ---------- 3. 自动播放策略 ----------
       const blocked = !!Player.autoplayBlocked;
       this.add('未被自动播放策略拦截', !blocked,
-        blocked ? '被拦截：请在本页点一下即可恢复' : `手势已记录=${U.gesture.has()}`);
-      this.add('用户手势状态', null,
-        `脚本记录=${U.gesture.seen}  浏览器判定=${U.gesture.browserSaysActive()}`);
+        blocked ? '被拦截：请在本页点一下即可恢复' : `用户激活=${U.activation.has()}`);
+      const ua = U.activation.describe();
+      this.add('用户激活状态（浏览器原生判定）', null,
+        `hasBeenActive=${ua.hasBeenActive} isActive=${ua.isActive}`);
 
       // ---------- 4. 真实推进（1.5 秒观察） ----------
       const t0 = Number(m.currentTime);

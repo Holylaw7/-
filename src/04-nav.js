@@ -21,24 +21,17 @@ const Nav = {
     this.playlist = list;
     try { sessionStorage.setItem('ykt_tool:playlist', JSON.stringify(list)); } catch (e) { }
   },
-  /** 记录访问过的页面，用于回退 */
-  markVisited(href) {
-    try {
-      const arr = JSON.parse(localStorage.getItem('ykt_tool:visits') || '[]');
-      arr.push({ href, t: Date.now(), leaf: U.route().leafId });
-      localStorage.setItem('ykt_tool:visits', JSON.stringify(arr.slice(-80)));
-    } catch (e) { }
-  },
+  /** 课程目录页地址。
+   *
+   *  原先会先读 localStorage['ykt_tool:visits'] 的历史记录、再回退到构造地址，
+   *  但写入方 markVisited() 从未被调用 —— 那个键永远是空的，读取纯属多余。
+   *  而构造出的 /v2/web/studentLog/<教室号> 本来就是唯一正确的落点，
+   *  所以直接构造，去掉那层无用的历史查询。 */
   lastLogPage() {
-    try {
-      const arr = JSON.parse(localStorage.getItem('ykt_tool:visits') || '[]');
-      const r = U.route();
-      for (let i = arr.length - 1; i >= 0; i--) {
-        if (arr[i].href && arr[i].href.includes(`/studentLog/${r.classroomId}`)) return arr[i].href;
-      }
-    } catch (e) { }
     const r = U.route();
-    return r.classroomId ? `${location.origin}/v2/web/studentLog/${r.classroomId}` : `${location.origin}/v2/web/index`;
+    return r.classroomId
+      ? `${location.origin}/v2/web/studentLog/${r.classroomId}`
+      : `${location.origin}/v2/web/index`;
   },
 
   // ------------------------------------------------------------ 接口/内联JSON

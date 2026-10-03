@@ -37,22 +37,6 @@ const Player = {
     return this.pick();
   },
 
-  /** 倍速锁定：只在值真的不同才赋值。
-   *  注意：给 playbackRate 赋相同值也会触发 ratechange 事件 —— 无条件反复赋值会
-   *  刷爆事件、污染统计（真站实测过：6 秒内伪造出 44 次 ratechange）。 */
-  enforceRate(media) {
-    if (!media || !CFG.rate || CFG.rate === 1) return;
-    try {
-      if (Math.abs(media.playbackRate - CFG.rate) > 0.01) {
-        media.playbackRate = CFG.rate;
-      }
-      if (Math.abs(Number(media.defaultPlaybackRate) - CFG.rate) > 0.01) {
-        media.defaultPlaybackRate = CFG.rate;
-      }
-    } catch (e) {
-      LOG.warn('设置倍速失败：' + e.message);
-    }
-  },
 
   /** 绑定 ratechange：站点一改倍速我们立刻改回来，并记录「被改到什么值、多久恢复」 */
   bindRateGuard(media) {
@@ -129,7 +113,7 @@ const Player = {
    *      （CDP 真实鼠标输入在自动化环境下也没能稳定展开）。
    *   4. 直接改 <xt-speedvalue> 的文字**不会被播放器覆盖回去**（等待数秒仍保持）。
    *
-   * 因此策略是：媒体倍速由 enforceRate 保证（真正的 2 倍速播放），
+   * 因此策略是：媒体倍速由站点自己的菜单点击保证（真正的 2 倍速播放），
    * 界面文字由这里同步，避免"显示 1.00X 但其实在 2 倍速"造成的误解。
    */
   speedUi() {
@@ -226,75 +210,6 @@ const Player = {
     }
   },
 
-  /**
-   * 让播放器的倍速显示稳定停在目标值。
-   *
-   * 真站实测：站点会周期性地把倍速显示改回「1.00X」（它同时也会把内部变量压回 1），
-   * 只靠定时重新赋值会出现「1.00X ↔ 2.00X」闪烁，日志也会被刷屏。
-   *
-   * 因此这里直接**劫持显示元素的文字赋值**：站点每次写入都会被改写成目标倍速，
-   * 从根上消除闪烁（只作用于这一个元素，不影响页面其它部分）。
-   */
-  pinSpeedUi() {
-    const ui = this.speedUi();
-    if (!ui || !ui.value) return false;
-    const el = ui.value;
-    if (el.__yktPinned && el.__yktPinnedRate === CFG.rate) return true;
-
-    const label = `${CFG.rate}.00X`;
-    try {
-      // ① 先在原型上拿到原始 setter，避免重复劫持时套娃
-      const proto = Object.getPrototypeOf(el);
-      const desc = Object.getOwnPropertyDescriptor(proto, 'textContent')
-        || Object.getOwnPropertyDescriptor(proto, 'innerText')
-        || Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
-      const nativeSet = desc && desc.set;
-      if (!nativeSet) return false;
-
-      const encode = (v) => String(v == null ? '' : v);
-      const guard = (written) => {
-        // 只要站点写入的不是目标倍速，就改写为目标倍速
-        if (/\d/.test(written) && !/^\s*2(\.0+)?\s*X\s*$/i.test(written)) {
-          Player.speedUiRewrites = (Player.speedUiRewrites || 0) + 1;
-          return label;
-        }
-        return written;
-      };
-
-      Object.defineProperty(el, 'textContent', {
-        configurable: true, enumerable: false,
-        get() { return nativeSet ? this.__yktText ?? '' : ''; },
-        set(v) {
-          const out = guard(encode(v));
-          this.__yktText = out;
-          nativeSet.call(this, out);
-        },
-      });
-      // innerText 在部分实现里是独立访问器，一并处理
-      const innerDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
-      if (innerDesc && innerDesc.set) {
-        Object.defineProperty(el, 'innerText', {
-          configurable: true, enumerable: false,
-          get() { return this.__yktText ?? ''; },
-          set(v) {
-            const out = guard(encode(v));
-            this.__yktText = out;
-            innerDesc.set.call(this, out);
-          },
-        });
-      }
-      el.__yktPinned = true;
-      el.__yktPinnedRate = CFG.rate;
-    } catch (e) {
-      LOG.warn('倍速显示劫持失败：' + e.message);
-      return false;
-    }
-
-    // 立刻写上目标值一次
-    try { el.textContent = label; } catch (e) { }
-    LOG.ok(`已锁定播放器倍速显示为 ${label}（站点改写会被自动纠正）`);
-    return true;
-  },
 
   /**
    * 后台保活：自动续播（完全不碰音量/静音）。
@@ -323,7 +238,8 @@ const Player = {
       // 这样既不会每 500ms 空转刷屏，也不会因为一次偶发失败就永久放弃。
       const now = Date.now();
       if (this._playRetryUntil && now < this._playRetryUntil) return;
-      if (this.autoplayBlocked && !U.gesture.has()) return;
+      // 已被判为「自动播放被拦」且浏览器还没有用户激活 → 交给等激活的重试逻辑，不在这里空转
+      if (this.autoplayBlocked && !U.activation.has()) return;
 
       const p = media.play();
       if (p && p.catch) {
@@ -378,29 +294,93 @@ const Player = {
    */
   onAutoplayBlocked(media) {
     this.autoplayBlockCount = (this.autoplayBlockCount || 0) + 1;
-    if (this._autoplayNotified) return;
-    this._autoplayNotified = true;
-    LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音且当前页面还没有用户手势）。');
-    UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下或滚一下，脚本会立刻继续（之后整段课程都不再需要交互）');
-    const since = Date.now();
-    U.gesture.wait(0).then(() => {
-      const waited = Math.round((Date.now() - since) / 1000);
-      LOG.ok(`检测到用户手势（等待 ${waited} 秒），正在恢复自动播放…`);
-      this.autoplayBlocked = false;
-      this._autoplayNotified = false;
-      this._autoplayRecoveredAt = Date.now();
-      const m = Player.get() || media;
-      try {
-        const p = m.play();
-        if (p && p.catch) {
-          p.then(() => LOG.ok('自动播放已恢复'))
-            .catch((e) => LOG.warn('手势后重试仍失败：' + ((e && e.name) || '')));
+    if (this._autoplayWait) return;   // 已有一个等待器挂着，不重复挂、不重复提示
+
+    const active = U.activation.has();
+    if (!active && !this._autoplayNotified) {
+      this._autoplayNotified = true;
+      UI.notice('浏览器拦住了自动播放：请在**视频画面上**点一下。'
+        + '（浏览器只认页面内容里的真实点击，点面板上的按钮不算。）点过之后整段课程都不再需要交互。');
+    }
+    LOG.warn(active
+      ? '自动播放被策略拒绝：页面已有用户激活却仍未放行 —— 常见原因：'
+        + '① 交互发生在 iframe 内而 play() 在顶层文档；② 浏览器把本站设为「阻止自动播放」。'
+      : '自动播放被浏览器的自动播放策略拦截（页面还没有真实用户交互）。');
+
+    this._waitActivationThenRetry(media, active);
+  },
+
+  /**
+   * 等**用户激活**（或它的变化）后重试 play()；只有真正播起来才解除拦截标记。
+   *
+   * 判据完全用浏览器原生的 navigator.userActivation，不再自己监听事件：
+   *   · hasBeenActive 一旦为 true 就永久为 true，无法区分「这次」与「很久以前」；
+   *   · 所以当它本来就已经是 true（说明这次失败不是缺激活造成的）时，
+   *     改等 isActive 由 false 变 true —— 那是「刚刚发生了一次真实输入」的信号。
+   * 这样既不会立刻重试又失败（死循环刷屏），也不会永远不再尝试。
+   */
+  _waitActivationThenRetry(media, alreadyActive) {
+    this._autoplayWait = true;
+    const t0 = Date.now();
+
+    const waitActivation = () => new Promise((resolve) => {
+      // 本来没有激活 → 等 hasBeenActive 变 true
+      // 本来已有激活 → 等一次「新的」输入（isActive 翻转）
+      let armed = false;
+      const tick = () => {
+        try {
+          const ua = navigator.userActivation;
+          if (alreadyActive) {
+            if (ua && ua.isActive) { resolve(true); return; }
+          } else {
+            if (ua && (ua.hasBeenActive || ua.isActive)) { resolve(true); return; }
+          }
+        } catch (e) {
+          resolve(true);   // 读不到就不阻塞，直接试一次
+          return;
         }
-      } catch (e) { }
+        if (!armed) { armed = true; }   // 至少等一个 tick，避免同刻立即返回
+        if (Date.now() - t0 >= 60000) { resolve(false); return; }
+        setTimeout(tick, 250);
+      };
+      setTimeout(tick, 250);
+    });
+
+    waitActivation().then((got) => {
+      this._autoplayWait = false;
+      if (!got) {
+        LOG.info('60 秒内没有新的页面交互，暂停自动重试（在视频画面上点一下即可继续）');
+        return;
+      }
+      const m = Player.get() || media;
+      if (!m) return;
+      LOG.info(`检测到用户交互（等待 ${Math.round((Date.now() - t0) / 1000)} 秒），尝试恢复自动播放…`);
+      let pr;
+      try { pr = m.play(); } catch (e) { pr = null; }
+      if (!pr || !pr.then) return;
+      pr.then(() => {
+        this.autoplayBlocked = false;
+        this._autoplayNotified = false;
+        this._autoplayRecoveredAt = Date.now();
+        UI.notice('');
+        LOG.ok('自动播放已恢复');
+      }).catch((e) => {
+        const name = (e && e.name) || '';
+        // 仍被拦：保持 autoplayBlocked=true（不谎报状态），等下一次交互再试
+        this.autoplayBlocked = true;
+        LOG.warn(`交互后重试仍失败：${name}。若反复如此，请在浏览器设置里允许本站自动播放。`);
+        if (!this._autoplayWait) this._waitActivationThenRetry(m, true);
+      });
     });
   },
 
-  /** 合成输入事件，避免站点「长时间无操作」弹窗 */
+  /**
+   * 合成输入事件，避免站点「长时间无操作」弹窗。
+   *
+   * 这里派发的是**合成事件**：浏览器不会因此给出用户激活，站点也只当作防挂机信号。
+   * 由于脚本判定用户激活完全依赖浏览器原生的 navigator.userActivation
+   * （它天然忽略合成事件），所以这些派发不会污染「是否已交互」的判定。
+   */
   antiIdle() {
     try {
       U.fireMouse(document, 'mousemove', {
@@ -511,14 +491,6 @@ const Player = {
     return false;
   },
 
-  /** 剩余可播时长（毫秒），用于超时保护 */
-  remainingMs() {
-    const media = this.get();
-    if (!media) return 10 * 60 * 1000;
-    const dur = Number(media.duration);
-    if (!Number.isFinite(dur) || dur <= 0) return 10 * 60 * 1000;
-    return Math.max((dur - media.currentTime) / Math.max(CFG.rate, 0.1), 1) * 1000;
-  },
 };
 
 // ============================================================================
@@ -527,7 +499,6 @@ const Player = {
 const Api = {
   leafProgress: new Map(),   // leaf_id -> 进度百分比
   leafList: null,            // 站点返回的目录结构
-  lastLogPageData: null,
   /** 已确认可用的课程活动接口（真站实测） */
   activityPath: '/v2/api/web/logs/learn/',
 

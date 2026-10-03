@@ -21,8 +21,6 @@ const CFG = {
   autoNext: true,
   /** 播放页最长等待时间（毫秒），超时则跳过该节 */
   itemTimeout: 90 * 60 * 1000,
-  /** 目录页最多处理多少节 */
-  maxItems: 500,
   /** 是否在剩余少量时间时快进到结尾（更快，但部分学校会校验播放时长） */
   fastForward: false,
   /** 快进触发阈值：已播放比例 */
@@ -105,67 +103,64 @@ const U = {
     return String((el && el.innerText) || '').replace(/\s+/g, ' ').trim();
   },
 
-  // ------------------------------------------------------------ 用户手势
-  /**
-   * 浏览器自动播放策略：没有「用户手势」时，未静音的 play() 会被拒绝
-   * （NotAllowedError: play() failed because the user didn't interact with the
-   *  document first）。站点本身若也不自己调用 play()，页面就会停在那里。
-   *
-   * 这里显式追踪用户是否已经交互过：一旦有过，就可以正常自动播放；
-   * 没有的话，脚本只发一次自己的提示，等用户点一下就恢复。
-   */
-  gesture: {
-    seen: false,
-    _waiters: [],
-    _installed: false,
-
-    /** 浏览器记录的激活状态（比我们自己的标记更权威） */
-    browserSaysActive() {
+  // ------------------------------------------------------------ 用户激活
+  //
+  //  浏览器的自动播放策略要求页面有过「真实用户输入」。这个状态浏览器自己就维护着：
+  //    navigator.userActivation.hasBeenActive —— 一旦有过真实输入就永久为 true，
+  //    合成事件不会让它变 true（规范如此），也无法被脚本伪造。
+  //
+  //  所以脚本**不需要自己监听鼠标/键盘事件**。早期版本自己写了一套手势追踪，
+  //  结果反而出错：antiIdle 为防挂机弹窗定时派发的合成 keydown 被自己当成了用户手势，
+  //  导致自动播放被拦时误判「用户已交互」→ 立刻重试 → 又被拒 → 死循环刷屏。
+  //
+  //  现在只做两件事：读原生状态、等它翻转。
+  activation: {
+    /** 是否已经有过真实用户输入（浏览器原生判定） */
+    has() {
       try {
         const ua = navigator.userActivation;
         return !!(ua && (ua.hasBeenActive || ua.isActive));
       } catch (e) { return false; }
     },
 
-    /** 综合判断：我们见过手势，或浏览器说已经激活过 */
-    has() {
-      return this.seen || this.browserSaysActive();
+    /** 当前是否正处于「用户刚刚交互过」的短暂窗口内 */
+    isActive() {
+      try {
+        const ua = navigator.userActivation;
+        return !!(ua && ua.isActive);
+      } catch (e) { return false; }
     },
 
-    mark(source) {
-      if (this.seen) return;
-      this.seen = true;
-      const waiters = this._waiters.slice();
-      this._waiters.length = 0;
-      waiters.forEach((fn) => { try { fn(); } catch (e) { } });
-    },
-
-    /** 等第一次用户手势（已发生过则立即返回） */
-    wait(timeoutMs) {
-      if (this.has()) return Promise.resolve(true);
+    /**
+     * 等 hasBeenActive 由 false 变为 true（即等到一次**新的**真实输入）。
+     * 已是 true 时立即返回，除非传 requireChange=true。
+     * 返回 true 表示等到了；false 表示超时。
+     */
+    waitForChange(timeoutMs, requireChange) {
+      if (!requireChange && this.has()) return Promise.resolve(true);
+      if (requireChange && !this.has()) return Promise.resolve(true); // 本来就是 false，任何输入都算新的
+      const t0 = Date.now();
       return new Promise((resolve) => {
-        let done = false;
-        const fire = () => { if (!done) { done = true; resolve(true); } };
-        this._waiters.push(fire);
-        if (timeoutMs > 0) setTimeout(() => { if (!done) { done = true; resolve(false); } }, timeoutMs);
+        const tick = () => {
+          if (this.isActive() || (requireChange && this.has() === false)) { resolve(true); return; }
+          if (Date.now() - t0 >= timeoutMs) { resolve(false); return; }
+          setTimeout(tick, 250);
+        };
+        // 用 isActive() 作为「刚刚输入」的信号：hasBeenActive 一旦为真就不再变化，
+        // 无法区分「这次输入」与「很久以前的输入」，而 isActive 只在短暂窗口内为真。
+        tick();
       });
     },
 
-    /** 在 document-start 装一次监听（capture 阶段，任何点击都算） */
-    install() {
-      if (this._installed) return;
-      this._installed = true;
-      const self = this;
-      const evs = ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'wheel', 'click'];
-      evs.forEach((t) => {
-        try {
-          window.addEventListener(t, function h() { self.mark(t); }, { capture: true, passive: true, once: false });
-        } catch (e) { }
-      });
-      // 页面加载时若浏览器已认定激活（例如从上一页接力过来），直接标记
-      if (this.browserSaysActive()) this.seen = true;
+    /** 供诊断展示 */
+    describe() {
+      try {
+        const ua = navigator.userActivation;
+        return { hasBeenActive: !!ua.hasBeenActive, isActive: !!ua.isActive };
+      } catch (e) { return { unavailable: true }; }
     },
   },
+
 
   /** 解析路径与查询参数，得到当前教室/小节信息 */
   route() {
@@ -247,21 +242,6 @@ const U = {
     try { target.dispatchEvent(ev); return true; } catch (e) { return false; }
   },
 
-  /** 模拟一次真实点击（尽量触发框架的事件系统）
-   *
-   *  ⚠️ 雨课堂的反自动化校验（实测 + 社区确认）：
-   *    它的卡片/按钮点击处理器会先判断「鼠标是否真的悬浮在目标上」：
-   *        changeHasMosue: function(hasMouse, target) { this.hasLeftMouse = hasMouse; this.mouseTarget = target }
-   *        goDetail: function(e) { var s = e.target;
-   *            if ((this.hasMouse || this.hasLeftMouse) && this.mouseTarget == s) { ...跳转... } }
-   *    其中 hasMouse 由 mousemove 时鼠标位移的欧氏距离算出，mouseout 时归零。
-   *    我们派发的合成 MouseEvent 的 clientX/clientY 默认是 0，
-   *    于是 hasMouse 恒为 0（falsy）、mouseTarget 也对不上 → **点击被直接忽略**。
-   *
-   *  解法（社区方案，这里做了增强）：
-   *    先用一个带超大 clientX/clientY 的 mousemove 事件顶起 hasMouse，
-   *    并让 mouseTarget 正确指向目标元素，再派发 click。
-   */
   click(el) {
     if (!el) return false;
     try {

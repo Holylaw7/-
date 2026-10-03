@@ -42,8 +42,6 @@
     autoNext: true,
     /** 播放页最长等待时间（毫秒），超时则跳过该节 */
     itemTimeout: 90 * 60 * 1000,
-    /** 目录页最多处理多少节 */
-    maxItems: 500,
     /** 是否在剩余少量时间时快进到结尾（更快，但部分学校会校验播放时长） */
     fastForward: false,
     /** 快进触发阈值：已播放比例 */
@@ -126,67 +124,64 @@
       return String((el && el.innerText) || '').replace(/\s+/g, ' ').trim();
     },
 
-    // ------------------------------------------------------------ 用户手势
-    /**
-     * 浏览器自动播放策略：没有「用户手势」时，未静音的 play() 会被拒绝
-     * （NotAllowedError: play() failed because the user didn't interact with the
-     *  document first）。站点本身若也不自己调用 play()，页面就会停在那里。
-     *
-     * 这里显式追踪用户是否已经交互过：一旦有过，就可以正常自动播放；
-     * 没有的话，脚本只发一次自己的提示，等用户点一下就恢复。
-     */
-    gesture: {
-      seen: false,
-      _waiters: [],
-      _installed: false,
-
-      /** 浏览器记录的激活状态（比我们自己的标记更权威） */
-      browserSaysActive() {
+    // ------------------------------------------------------------ 用户激活
+    //
+    //  浏览器的自动播放策略要求页面有过「真实用户输入」。这个状态浏览器自己就维护着：
+    //    navigator.userActivation.hasBeenActive —— 一旦有过真实输入就永久为 true，
+    //    合成事件不会让它变 true（规范如此），也无法被脚本伪造。
+    //
+    //  所以脚本**不需要自己监听鼠标/键盘事件**。早期版本自己写了一套手势追踪，
+    //  结果反而出错：antiIdle 为防挂机弹窗定时派发的合成 keydown 被自己当成了用户手势，
+    //  导致自动播放被拦时误判「用户已交互」→ 立刻重试 → 又被拒 → 死循环刷屏。
+    //
+    //  现在只做两件事：读原生状态、等它翻转。
+    activation: {
+      /** 是否已经有过真实用户输入（浏览器原生判定） */
+      has() {
         try {
           const ua = navigator.userActivation;
           return !!(ua && (ua.hasBeenActive || ua.isActive));
         } catch (e) { return false; }
       },
 
-      /** 综合判断：我们见过手势，或浏览器说已经激活过 */
-      has() {
-        return this.seen || this.browserSaysActive();
+      /** 当前是否正处于「用户刚刚交互过」的短暂窗口内 */
+      isActive() {
+        try {
+          const ua = navigator.userActivation;
+          return !!(ua && ua.isActive);
+        } catch (e) { return false; }
       },
 
-      mark(source) {
-        if (this.seen) return;
-        this.seen = true;
-        const waiters = this._waiters.slice();
-        this._waiters.length = 0;
-        waiters.forEach((fn) => { try { fn(); } catch (e) { } });
-      },
-
-      /** 等第一次用户手势（已发生过则立即返回） */
-      wait(timeoutMs) {
-        if (this.has()) return Promise.resolve(true);
+      /**
+       * 等 hasBeenActive 由 false 变为 true（即等到一次**新的**真实输入）。
+       * 已是 true 时立即返回，除非传 requireChange=true。
+       * 返回 true 表示等到了；false 表示超时。
+       */
+      waitForChange(timeoutMs, requireChange) {
+        if (!requireChange && this.has()) return Promise.resolve(true);
+        if (requireChange && !this.has()) return Promise.resolve(true); // 本来就是 false，任何输入都算新的
+        const t0 = Date.now();
         return new Promise((resolve) => {
-          let done = false;
-          const fire = () => { if (!done) { done = true; resolve(true); } };
-          this._waiters.push(fire);
-          if (timeoutMs > 0) setTimeout(() => { if (!done) { done = true; resolve(false); } }, timeoutMs);
+          const tick = () => {
+            if (this.isActive() || (requireChange && this.has() === false)) { resolve(true); return; }
+            if (Date.now() - t0 >= timeoutMs) { resolve(false); return; }
+            setTimeout(tick, 250);
+          };
+          // 用 isActive() 作为「刚刚输入」的信号：hasBeenActive 一旦为真就不再变化，
+          // 无法区分「这次输入」与「很久以前的输入」，而 isActive 只在短暂窗口内为真。
+          tick();
         });
       },
 
-      /** 在 document-start 装一次监听（capture 阶段，任何点击都算） */
-      install() {
-        if (this._installed) return;
-        this._installed = true;
-        const self = this;
-        const evs = ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'wheel', 'click'];
-        evs.forEach((t) => {
-          try {
-            window.addEventListener(t, function h() { self.mark(t); }, { capture: true, passive: true, once: false });
-          } catch (e) { }
-        });
-        // 页面加载时若浏览器已认定激活（例如从上一页接力过来），直接标记
-        if (this.browserSaysActive()) this.seen = true;
+      /** 供诊断展示 */
+      describe() {
+        try {
+          const ua = navigator.userActivation;
+          return { hasBeenActive: !!ua.hasBeenActive, isActive: !!ua.isActive };
+        } catch (e) { return { unavailable: true }; }
       },
     },
+
 
     /** 解析路径与查询参数，得到当前教室/小节信息 */
     route() {
@@ -268,21 +263,6 @@
       try { target.dispatchEvent(ev); return true; } catch (e) { return false; }
     },
 
-    /** 模拟一次真实点击（尽量触发框架的事件系统）
-     *
-     *  ⚠️ 雨课堂的反自动化校验（实测 + 社区确认）：
-     *    它的卡片/按钮点击处理器会先判断「鼠标是否真的悬浮在目标上」：
-     *        changeHasMosue: function(hasMouse, target) { this.hasLeftMouse = hasMouse; this.mouseTarget = target }
-     *        goDetail: function(e) { var s = e.target;
-     *            if ((this.hasMouse || this.hasLeftMouse) && this.mouseTarget == s) { ...跳转... } }
-     *    其中 hasMouse 由 mousemove 时鼠标位移的欧氏距离算出，mouseout 时归零。
-     *    我们派发的合成 MouseEvent 的 clientX/clientY 默认是 0，
-     *    于是 hasMouse 恒为 0（falsy）、mouseTarget 也对不上 → **点击被直接忽略**。
-     *
-     *  解法（社区方案，这里做了增强）：
-     *    先用一个带超大 clientX/clientY 的 mousemove 事件顶起 hasMouse，
-     *    并让 mouseTarget 正确指向目标元素，再派发 click。
-     */
     click(el) {
       if (!el) return false;
       try {
@@ -608,22 +588,6 @@
       return this.pick();
     },
 
-    /** 倍速锁定：只在值真的不同才赋值。
-     *  注意：给 playbackRate 赋相同值也会触发 ratechange 事件 —— 无条件反复赋值会
-     *  刷爆事件、污染统计（真站实测过：6 秒内伪造出 44 次 ratechange）。 */
-    enforceRate(media) {
-      if (!media || !CFG.rate || CFG.rate === 1) return;
-      try {
-        if (Math.abs(media.playbackRate - CFG.rate) > 0.01) {
-          media.playbackRate = CFG.rate;
-        }
-        if (Math.abs(Number(media.defaultPlaybackRate) - CFG.rate) > 0.01) {
-          media.defaultPlaybackRate = CFG.rate;
-        }
-      } catch (e) {
-        LOG.warn('设置倍速失败：' + e.message);
-      }
-    },
 
     /** 绑定 ratechange：站点一改倍速我们立刻改回来，并记录「被改到什么值、多久恢复」 */
     bindRateGuard(media) {
@@ -700,7 +664,7 @@
      *      （CDP 真实鼠标输入在自动化环境下也没能稳定展开）。
      *   4. 直接改 <xt-speedvalue> 的文字**不会被播放器覆盖回去**（等待数秒仍保持）。
      *
-     * 因此策略是：媒体倍速由 enforceRate 保证（真正的 2 倍速播放），
+     * 因此策略是：媒体倍速由站点自己的菜单点击保证（真正的 2 倍速播放），
      * 界面文字由这里同步，避免"显示 1.00X 但其实在 2 倍速"造成的误解。
      */
     speedUi() {
@@ -797,75 +761,6 @@
       }
     },
 
-    /**
-     * 让播放器的倍速显示稳定停在目标值。
-     *
-     * 真站实测：站点会周期性地把倍速显示改回「1.00X」（它同时也会把内部变量压回 1），
-     * 只靠定时重新赋值会出现「1.00X ↔ 2.00X」闪烁，日志也会被刷屏。
-     *
-     * 因此这里直接**劫持显示元素的文字赋值**：站点每次写入都会被改写成目标倍速，
-     * 从根上消除闪烁（只作用于这一个元素，不影响页面其它部分）。
-     */
-    pinSpeedUi() {
-      const ui = this.speedUi();
-      if (!ui || !ui.value) return false;
-      const el = ui.value;
-      if (el.__yktPinned && el.__yktPinnedRate === CFG.rate) return true;
-
-      const label = `${CFG.rate}.00X`;
-      try {
-        // ① 先在原型上拿到原始 setter，避免重复劫持时套娃
-        const proto = Object.getPrototypeOf(el);
-        const desc = Object.getOwnPropertyDescriptor(proto, 'textContent')
-          || Object.getOwnPropertyDescriptor(proto, 'innerText')
-          || Object.getOwnPropertyDescriptor(Node.prototype, 'textContent');
-        const nativeSet = desc && desc.set;
-        if (!nativeSet) return false;
-
-        const encode = (v) => String(v == null ? '' : v);
-        const guard = (written) => {
-          // 只要站点写入的不是目标倍速，就改写为目标倍速
-          if (/\d/.test(written) && !/^\s*2(\.0+)?\s*X\s*$/i.test(written)) {
-            Player.speedUiRewrites = (Player.speedUiRewrites || 0) + 1;
-            return label;
-          }
-          return written;
-        };
-
-        Object.defineProperty(el, 'textContent', {
-          configurable: true, enumerable: false,
-          get() { return nativeSet ? this.__yktText ?? '' : ''; },
-          set(v) {
-            const out = guard(encode(v));
-            this.__yktText = out;
-            nativeSet.call(this, out);
-          },
-        });
-        // innerText 在部分实现里是独立访问器，一并处理
-        const innerDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'innerText');
-        if (innerDesc && innerDesc.set) {
-          Object.defineProperty(el, 'innerText', {
-            configurable: true, enumerable: false,
-            get() { return this.__yktText ?? ''; },
-            set(v) {
-              const out = guard(encode(v));
-              this.__yktText = out;
-              innerDesc.set.call(this, out);
-            },
-          });
-        }
-        el.__yktPinned = true;
-        el.__yktPinnedRate = CFG.rate;
-      } catch (e) {
-        LOG.warn('倍速显示劫持失败：' + e.message);
-        return false;
-      }
-
-      // 立刻写上目标值一次
-      try { el.textContent = label; } catch (e) { }
-      LOG.ok(`已锁定播放器倍速显示为 ${label}（站点改写会被自动纠正）`);
-      return true;
-    },
 
     /**
      * 后台保活：自动续播（完全不碰音量/静音）。
@@ -894,7 +789,8 @@
         // 这样既不会每 500ms 空转刷屏，也不会因为一次偶发失败就永久放弃。
         const now = Date.now();
         if (this._playRetryUntil && now < this._playRetryUntil) return;
-        if (this.autoplayBlocked && !U.gesture.has()) return;
+        // 已被判为「自动播放被拦」且浏览器还没有用户激活 → 交给等激活的重试逻辑，不在这里空转
+        if (this.autoplayBlocked && !U.activation.has()) return;
 
         const p = media.play();
         if (p && p.catch) {
@@ -949,29 +845,93 @@
      */
     onAutoplayBlocked(media) {
       this.autoplayBlockCount = (this.autoplayBlockCount || 0) + 1;
-      if (this._autoplayNotified) return;
-      this._autoplayNotified = true;
-      LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音且当前页面还没有用户手势）。');
-      UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下或滚一下，脚本会立刻继续（之后整段课程都不再需要交互）');
-      const since = Date.now();
-      U.gesture.wait(0).then(() => {
-        const waited = Math.round((Date.now() - since) / 1000);
-        LOG.ok(`检测到用户手势（等待 ${waited} 秒），正在恢复自动播放…`);
-        this.autoplayBlocked = false;
-        this._autoplayNotified = false;
-        this._autoplayRecoveredAt = Date.now();
-        const m = Player.get() || media;
-        try {
-          const p = m.play();
-          if (p && p.catch) {
-            p.then(() => LOG.ok('自动播放已恢复'))
-              .catch((e) => LOG.warn('手势后重试仍失败：' + ((e && e.name) || '')));
+      if (this._autoplayWait) return;   // 已有一个等待器挂着，不重复挂、不重复提示
+
+      const active = U.activation.has();
+      if (!active && !this._autoplayNotified) {
+        this._autoplayNotified = true;
+        UI.notice('浏览器拦住了自动播放：请在**视频画面上**点一下。'
+          + '（浏览器只认页面内容里的真实点击，点面板上的按钮不算。）点过之后整段课程都不再需要交互。');
+      }
+      LOG.warn(active
+        ? '自动播放被策略拒绝：页面已有用户激活却仍未放行 —— 常见原因：'
+          + '① 交互发生在 iframe 内而 play() 在顶层文档；② 浏览器把本站设为「阻止自动播放」。'
+        : '自动播放被浏览器的自动播放策略拦截（页面还没有真实用户交互）。');
+
+      this._waitActivationThenRetry(media, active);
+    },
+
+    /**
+     * 等**用户激活**（或它的变化）后重试 play()；只有真正播起来才解除拦截标记。
+     *
+     * 判据完全用浏览器原生的 navigator.userActivation，不再自己监听事件：
+     *   · hasBeenActive 一旦为 true 就永久为 true，无法区分「这次」与「很久以前」；
+     *   · 所以当它本来就已经是 true（说明这次失败不是缺激活造成的）时，
+     *     改等 isActive 由 false 变 true —— 那是「刚刚发生了一次真实输入」的信号。
+     * 这样既不会立刻重试又失败（死循环刷屏），也不会永远不再尝试。
+     */
+    _waitActivationThenRetry(media, alreadyActive) {
+      this._autoplayWait = true;
+      const t0 = Date.now();
+
+      const waitActivation = () => new Promise((resolve) => {
+        // 本来没有激活 → 等 hasBeenActive 变 true
+        // 本来已有激活 → 等一次「新的」输入（isActive 翻转）
+        let armed = false;
+        const tick = () => {
+          try {
+            const ua = navigator.userActivation;
+            if (alreadyActive) {
+              if (ua && ua.isActive) { resolve(true); return; }
+            } else {
+              if (ua && (ua.hasBeenActive || ua.isActive)) { resolve(true); return; }
+            }
+          } catch (e) {
+            resolve(true);   // 读不到就不阻塞，直接试一次
+            return;
           }
-        } catch (e) { }
+          if (!armed) { armed = true; }   // 至少等一个 tick，避免同刻立即返回
+          if (Date.now() - t0 >= 60000) { resolve(false); return; }
+          setTimeout(tick, 250);
+        };
+        setTimeout(tick, 250);
+      });
+
+      waitActivation().then((got) => {
+        this._autoplayWait = false;
+        if (!got) {
+          LOG.info('60 秒内没有新的页面交互，暂停自动重试（在视频画面上点一下即可继续）');
+          return;
+        }
+        const m = Player.get() || media;
+        if (!m) return;
+        LOG.info(`检测到用户交互（等待 ${Math.round((Date.now() - t0) / 1000)} 秒），尝试恢复自动播放…`);
+        let pr;
+        try { pr = m.play(); } catch (e) { pr = null; }
+        if (!pr || !pr.then) return;
+        pr.then(() => {
+          this.autoplayBlocked = false;
+          this._autoplayNotified = false;
+          this._autoplayRecoveredAt = Date.now();
+          UI.notice('');
+          LOG.ok('自动播放已恢复');
+        }).catch((e) => {
+          const name = (e && e.name) || '';
+          // 仍被拦：保持 autoplayBlocked=true（不谎报状态），等下一次交互再试
+          this.autoplayBlocked = true;
+          LOG.warn(`交互后重试仍失败：${name}。若反复如此，请在浏览器设置里允许本站自动播放。`);
+          if (!this._autoplayWait) this._waitActivationThenRetry(m, true);
+        });
       });
     },
 
-    /** 合成输入事件，避免站点「长时间无操作」弹窗 */
+    /**
+     * 合成输入事件，避免站点「长时间无操作」弹窗。
+     *
+     * 这里派发的是**合成事件**：浏览器不会因此给出用户激活，站点也只当作防挂机信号。
+     * 由于脚本判定用户激活完全依赖浏览器原生的 navigator.userActivation
+     * （它天然忽略合成事件），所以这些派发不会污染「是否已交互」的判定。
+     */
     antiIdle() {
       try {
         U.fireMouse(document, 'mousemove', {
@@ -1082,14 +1042,6 @@
       return false;
     },
 
-    /** 剩余可播时长（毫秒），用于超时保护 */
-    remainingMs() {
-      const media = this.get();
-      if (!media) return 10 * 60 * 1000;
-      const dur = Number(media.duration);
-      if (!Number.isFinite(dur) || dur <= 0) return 10 * 60 * 1000;
-      return Math.max((dur - media.currentTime) / Math.max(CFG.rate, 0.1), 1) * 1000;
-    },
   };
 
   // ============================================================================
@@ -1098,7 +1050,6 @@
   const Api = {
     leafProgress: new Map(),   // leaf_id -> 进度百分比
     leafList: null,            // 站点返回的目录结构
-    lastLogPageData: null,
     /** 已确认可用的课程活动接口（真站实测） */
     activityPath: '/v2/api/web/logs/learn/',
 
@@ -1419,24 +1370,17 @@
       this.playlist = list;
       try { sessionStorage.setItem('ykt_tool:playlist', JSON.stringify(list)); } catch (e) { }
     },
-    /** 记录访问过的页面，用于回退 */
-    markVisited(href) {
-      try {
-        const arr = JSON.parse(localStorage.getItem('ykt_tool:visits') || '[]');
-        arr.push({ href, t: Date.now(), leaf: U.route().leafId });
-        localStorage.setItem('ykt_tool:visits', JSON.stringify(arr.slice(-80)));
-      } catch (e) { }
-    },
+    /** 课程目录页地址。
+     *
+     *  原先会先读 localStorage['ykt_tool:visits'] 的历史记录、再回退到构造地址，
+     *  但写入方 markVisited() 从未被调用 —— 那个键永远是空的，读取纯属多余。
+     *  而构造出的 /v2/web/studentLog/<教室号> 本来就是唯一正确的落点，
+     *  所以直接构造，去掉那层无用的历史查询。 */
     lastLogPage() {
-      try {
-        const arr = JSON.parse(localStorage.getItem('ykt_tool:visits') || '[]');
-        const r = U.route();
-        for (let i = arr.length - 1; i >= 0; i--) {
-          if (arr[i].href && arr[i].href.includes(`/studentLog/${r.classroomId}`)) return arr[i].href;
-        }
-      } catch (e) { }
       const r = U.route();
-      return r.classroomId ? `${location.origin}/v2/web/studentLog/${r.classroomId}` : `${location.origin}/v2/web/index`;
+      return r.classroomId
+        ? `${location.origin}/v2/web/studentLog/${r.classroomId}`
+        : `${location.origin}/v2/web/index`;
     },
 
     // ------------------------------------------------------------ 接口/内联JSON
@@ -2580,9 +2524,7 @@
       // ① 最早：装载守卫（必须早于站点脚本注册监听）
       //    注意：iframe 内的播放器同样需要守卫与倍速，否则后台照样被暂停
       try { Guard.install(); } catch (e) { console.error('[刷课助手] 守卫装载失败', e); }
-      // 追踪用户手势：浏览器自动播放策略要求有用户手势（脚本不再静音），
-      // 有了手势记录，用户点过一次之后脚本才能顺利恢复自动播放。
-      try { U.gesture.install(); } catch (e) { }
+      // 用户激活状态由浏览器原生维护（navigator.userActivation），无需自己监听事件
       try { Api.hook(); } catch (e) { }
 
       // ② 恢复用户设置
@@ -2719,7 +2661,7 @@
                 autoplayBlocked: !!Player.autoplayBlocked,
                 autoplayBlockCount: Player.autoplayBlockCount || 0,
                 autoplayRecoveredAt: Player._autoplayRecoveredAt || null,
-                userGesture: { seen: U.gesture.seen, browserActive: U.gesture.browserSaysActive() },
+                userActivation: U.activation.describe(),
                 rateFixCount: Player.rateFixCount || 0,
                 rateStats: Player.rateStats(),
                 progress: Player.readProgress(),
@@ -2810,9 +2752,10 @@
         // ---------- 3. 自动播放策略 ----------
         const blocked = !!Player.autoplayBlocked;
         this.add('未被自动播放策略拦截', !blocked,
-          blocked ? '被拦截：请在本页点一下即可恢复' : `手势已记录=${U.gesture.has()}`);
-        this.add('用户手势状态', null,
-          `脚本记录=${U.gesture.seen}  浏览器判定=${U.gesture.browserSaysActive()}`);
+          blocked ? '被拦截：请在本页点一下即可恢复' : `用户激活=${U.activation.has()}`);
+        const ua = U.activation.describe();
+        this.add('用户激活状态（浏览器原生判定）', null,
+          `hasBeenActive=${ua.hasBeenActive} isActive=${ua.isActive}`);
 
         // ---------- 4. 真实推进（1.5 秒观察） ----------
         const t0 = Number(m.currentTime);
