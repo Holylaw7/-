@@ -17,6 +17,7 @@
  */
 const http = require('http');
 const fs = require('fs');
+const CONFIG = require('./config');
 const path = require('path');
 const url = require('url');
 
@@ -24,7 +25,7 @@ const PORT = Number(process.argv[2] || 8099);
 const PUBLIC = path.join(__dirname, 'public');
 
 // ------------------------------------------------------------------ 数据集
-const CLASSROOM_ID = '10000001';   // 仿真用的虚构教室号，与任何真实课程无关
+const CLASSROOM_ID = CONFIG.mock.classroom;   // 仿真用虚构教室号，与真实课程无关
 const UNIVERSITY_ID = '1000';       // 虚构学校 id
 const PLATFORM_ID = '3';
 
@@ -48,8 +49,8 @@ function makeLeaves() {
   ];
   return items.map((it, i) => ({
     ...it,
-    leaf_id: String(90000001 + i),
-    node_id: String(70000001 + i),
+    leaf_id: String(CONFIG.mock.leafBase + i),
+    node_id: String(CONFIG.mock.nodeBase + i),
     index: i,
     // 服务端已记录的最大播放秒数（用于断点续播 / 完成判定）
     server_seconds: 0,
@@ -276,6 +277,41 @@ const server = http.createServer(async (req, res) => {
         </header>
         <ul class="leaf-list">${list}</ul>
       </div>`), { 'Content-Type': 'text/html; charset=utf-8' });
+  }
+
+  // ------------------------------------------------ 课程活动列表接口
+  //
+  //  真站实测：脚本靠这个接口拿 leaf_id 直接跳 URL（绕开被反自动化校验挡住的
+  //  卡片点击）。仿真环境必须同样提供，否则脚本在目录页永远无法进入播放页。
+  //
+  //  GET /v2/api/web/logs/learn/<教室>?actype=-1&page=N&offset=20&sort=-1
+  //  返回 data.activities[].content.leaf_id / title / type, data.has_more
+  const mActs = p.match(/^\/v2\/api\/web\/logs\/learn\/([^/?#]+)/);
+  if (mActs) {
+    const offset = Number(u.query.offset || 20) || 20;
+    const page = Number(u.query.page || 0) || 0;
+    const from = page * offset;
+    const slice = STATE.leaves.slice(from, from + offset);
+    const activities = slice.map((l, i) => ({
+      classroom_id: Number(CLASSROOM_ID),
+      title: l.name,
+      // 真站里 content.leaf_id 才是小节 id；type 17 = 视频
+      content: { is_open_type: false, sku_id: 0, leaf_id: Number(l.leaf_id), leaf_type_id: null },
+      courseware_id: String(2000000 + from + i),
+      create_time: 1700000000000 + (from + i) * 1000,
+      type: l.kind === 'video' ? 17 : l.kind === 'quiz' ? 19 : 16,
+      id: 30000000 + from + i,
+    }));
+    return json(res, {
+      msg: '',
+      success: true,
+      data: {
+        IS_SIMPLE: false,
+        prev_id: null,
+        activities,
+        has_more: from + offset < STATE.leaves.length,
+      },
+    });
   }
 
   // ------------------------------------------------ 视频播放页（ai-workspace/lms-graph）

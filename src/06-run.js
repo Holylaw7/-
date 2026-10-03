@@ -385,6 +385,9 @@ const Boot = {
     // ① 最早：装载守卫（必须早于站点脚本注册监听）
     //    注意：iframe 内的播放器同样需要守卫与倍速，否则后台照样被暂停
     try { Guard.install(); } catch (e) { console.error('[刷课助手] 守卫装载失败', e); }
+    // 追踪用户手势：浏览器自动播放策略要求「有用户手势 或 已静音」，
+    // 有了手势记录，用户点过一次之后脚本才能顺利恢复自动播放。
+    try { U.gesture.install(); } catch (e) { }
     try { Api.hook(); } catch (e) { }
 
     // ② 恢复用户设置
@@ -513,6 +516,8 @@ const Boot = {
               mediaTag: m ? m.tagName + (m.id ? '#' + m.id : '') : null,
               error: m && m.error ? { code: m.error.code, message: m.error.message } : null,
               playFailCount: Player.playFailCount || 0,
+              autoplayBlocked: !!Player.autoplayBlocked,
+              userGesture: { seen: U.gesture.seen, browserActive: U.gesture.browserSaysActive() },
               rateFixCount: Player.rateFixCount || 0,
               rateStats: Player.rateStats(),
               progress: Player.readProgress(),

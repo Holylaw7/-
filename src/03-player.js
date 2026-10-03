@@ -296,35 +296,97 @@ const Player = {
     return true;
   },
 
-  /** 后台保活：静音 + 自动续播 */
+  /**
+   * 后台保活：静音 + 自动续播。
+   *
+   * 关于「自动播放被网站拦截」（真实站点上确实会遇到）：
+   *   浏览器的自动播放策略要求「用户手势」或「静音」二者之一。
+   *   脚本会静音，但站点的播放器可能在之后又把它取消静音，
+   *   或者媒体元素尚未加载到可播放状态，于是 play() 被
+   *   NotAllowedError 拒绝。
+   *
+   *   关键是：被拒绝时**不要每 500ms 硬重试**（既无效又刷屏），
+   *   而是标记为「被拦截」，等用户第一次交互后再自动恢复播放。
+   */
   keepAlive(media) {
     if (!media) return;
     try {
-      if (CFG.mute) {
-        if (!media.muted) media.muted = true;
-        if (media.volume !== 0) media.volume = 0;
-        media.defaultMuted = true;
-        media.setAttribute('muted', 'muted');
-      }
+      this.ensureMuted(media);
+
       const dur = Number(media.duration);
       const nearEnd = Number.isFinite(dur) && dur > 1 && dur - media.currentTime <= 0.4;
-      if (media.paused && !media.ended && !nearEnd) {
-        const p = media.play();
-        if (p && p.catch) {
-          p.catch((err) => {
-            this.playFailCount = (this.playFailCount || 0) + 1;
+      if (!media.paused || media.ended || nearEnd) {
+        // 已经在播 → 若之前被判为拦截，说明其实能播，解除标记
+        if (!media.paused) this.autoplayBlocked = false;
+        return;
+      }
+      // 不支持 play() 的媒体对象直接跳过
+      if (typeof media.play !== 'function') return;
+
+      // 已知被浏览器拦截且用户还没交互过 → 不再空转重试，只等手势
+      if (this.autoplayBlocked && !U.gesture.has()) return;
+
+      const p = media.play();
+      if (p && p.catch) {
+        p.then(() => {
+          if (this.autoplayBlocked) {
+            this.autoplayBlocked = false;
+            LOG.ok('自动播放已恢复');
+          }
+          this.playFailCount = 0;
+        }).catch((err) => {
+          const name = (err && err.name) || '';
+          this.playFailCount = (this.playFailCount || 0) + 1;
+          const mediaErr = media.error;
+
+          if (name === 'NotAllowedError') {
+            // 自动播放策略拦截 —— 这是最常见的"被网站拦截"
+            this.autoplayBlocked = true;
+            this.onAutoplayBlocked(media);
+            return;
+          }
+          if (mediaErr && (mediaErr.code === 3 || mediaErr.code === 4)) {
             if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
-              const mediaErr = media.error;
-              if (mediaErr && (mediaErr.code === 3 || mediaErr.code === 4)) {
-                LOG.warn(`媒体解码失败（code ${mediaErr.code}）：${mediaErr.message || ''}，可能是浏览器不支持该编码`);
-              } else {
-                LOG.warn(`自动播放被拦截（第 ${this.playFailCount} 次）：${(err && err.name) || ''} ${(err && err.message) || ''}`);
-              }
+              LOG.warn(`媒体解码失败（code ${mediaErr.code}）：${mediaErr.message || ''}，可能是浏览器不支持该编码`);
             }
-          });
-        }
+            return;
+          }
+          if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
+            LOG.warn(`播放失败（第 ${this.playFailCount} 次）：${name} ${(err && err.message) || ''}`);
+          }
+        });
       }
     } catch (e) { }
+  },
+
+  /** 强制媒体静音（静音是自动播放策略放行的条件之一） */
+  ensureMuted(media) {
+    if (!CFG.mute || !media) return;
+    try {
+      if (!media.muted) media.muted = true;
+      if (media.volume !== 0) media.volume = 0;
+      media.defaultMuted = true;
+      if (!media.hasAttribute('muted')) media.setAttribute('muted', 'muted');
+    } catch (e) { }
+  },
+
+  /** 被自动播放策略拦截时的处理：提示一次，并在用户交互后自动恢复 */
+  onAutoplayBlocked(media) {
+    if (this._autoplayNotified) return;
+    this._autoplayNotified = true;
+    LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音或缺少用户手势）。');
+    UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下，脚本会自动继续（之后整段课程都不再需要点击）');
+    U.gesture.wait(0).then(() => {
+      LOG.ok('检测到你的点击，正在恢复自动播放…');
+      this.autoplayBlocked = false;
+      this._autoplayNotified = false;
+      const m = Player.get() || media;
+      this.ensureMuted(m);
+      try {
+        const p = m.play();
+        if (p && p.catch) p.catch(() => { });
+      } catch (e) { }
+    });
   },
 
   /** 合成输入事件，避免站点「长时间无操作」弹窗 */

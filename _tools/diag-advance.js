@@ -11,10 +11,10 @@ const path = require('path');
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const PORT = 9367;
-const APP = `http://127.0.0.1:${process.env.MOCK_PORT || 8099}`;
+const APP = CONFIG.mock.origin();
 const USERSCRIPT = path.join(__dirname, '..', 'dist', 'changjiang-yuketang-auto.user.js');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
+const LEAF = CONFIG.leaf || process.argv[2] || String(CONFIG.mock.leafBase);
 
 (async () => {
   await fetch(`${APP}/__reset`);
@@ -59,7 +59,7 @@ const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
     await sleep(1200);
     await evalx(`document.getElementById('btn-login') && document.getElementById('btn-login').click(), true`);
     await sleep(1800);
-    await send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.classroom}/video/${LEAF}?is_chapter=1` });
+    await send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.mock.classroom}/video/${LEAF}?is_chapter=1` });
 
     for (let i = 0; i < 30; i++) {
       await sleep(2000);

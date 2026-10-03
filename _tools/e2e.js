@@ -20,7 +20,7 @@ const path = require('path');
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const CDP_PORT = 9333;
 const APP = `http://127.0.0.1:${process.env.MOCK_PORT || 8099}`;
-const CLASSROOM = CONFIG.classroom;
+const CLASSROOM = CONFIG.mock.classroom;   // 仿真教室号，与真实课程无关
 const USERSCRIPT = path.join(__dirname, '..', 'dist', 'changjiang-yuketang-auto.user.js');
 const SHOTS = path.join(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });

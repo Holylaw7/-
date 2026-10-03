@@ -13,12 +13,12 @@ const path = require('path');
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const PORT = 9373;
-const APP = `http://127.0.0.1:${process.env.MOCK_PORT || 8099}`;
+const APP = CONFIG.mock.origin();
 const PASTE = path.join(__dirname, '..', 'dist', 'console-paste.js');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  ✓' : '  ✗'} ${n}${d ? '  — ' + d : ''}`); };
-const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
+const LEAF = CONFIG.leaf || process.argv[2] || String(CONFIG.mock.leafBase);
 
 (async () => {
   await fetch(`${APP}/__reset`);
@@ -64,7 +64,7 @@ const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
     await sleep(1200);
     await evalx(`document.getElementById('btn-login') && document.getElementById('btn-login').click(), true`);
     await sleep(1800);
-    await send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.classroom}/video/${LEAF}?is_chapter=1` });
+    await send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.mock.classroom}/video/${LEAF}?is_chapter=1` });
     await sleep(1500);
 
     const before = await evalx(`JSON.stringify({ panel: !!document.getElementById('ykt-tool-host'), tool: !!window.__yktTool })`);

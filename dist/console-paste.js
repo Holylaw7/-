@@ -1,5 +1,5 @@
 /*
- * 长江雨课堂 · 自动刷课助手 —— 控制台粘贴版 v1.1.0
+ * 长江雨课堂 · 自动刷课助手 —— 控制台粘贴版 v1.1.1
  *
  * 用法（篡改猴因任何原因没生效时的应急方案）：
  *   1. 在课程页按 F12 打开开发者工具 → 切到「控制台 / Console」
@@ -21,7 +21,7 @@
   // ============================================================================
   const YKT = {
     name: '长江雨课堂 · 自动刷课助手',
-    version: '1.1.0',
+    version: '1.1.1',
     debug: true,
   };
 
@@ -123,6 +123,68 @@
     /** 文本归一化 */
     text(el) {
       return String((el && el.innerText) || '').replace(/\s+/g, ' ').trim();
+    },
+
+    // ------------------------------------------------------------ 用户手势
+    /**
+     * 浏览器自动播放策略：没有「用户手势」时，未静音的 play() 会被拒绝
+     * （NotAllowedError: play() failed because the user didn't interact with the
+     *  document first）。站点本身若也不自己调用 play()，页面就会停在那里。
+     *
+     * 这里显式追踪用户是否已经交互过：一旦有过，就可以正常自动播放；
+     * 没有的话，脚本只发一次自己的提示，等用户点一下就恢复。
+     */
+    gesture: {
+      seen: false,
+      _waiters: [],
+      _installed: false,
+
+      /** 浏览器记录的激活状态（比我们自己的标记更权威） */
+      browserSaysActive() {
+        try {
+          const ua = navigator.userActivation;
+          return !!(ua && (ua.hasBeenActive || ua.isActive));
+        } catch (e) { return false; }
+      },
+
+      /** 综合判断：我们见过手势，或浏览器说已经激活过 */
+      has() {
+        return this.seen || this.browserSaysActive();
+      },
+
+      mark(source) {
+        if (this.seen) return;
+        this.seen = true;
+        const waiters = this._waiters.slice();
+        this._waiters.length = 0;
+        waiters.forEach((fn) => { try { fn(); } catch (e) { } });
+      },
+
+      /** 等第一次用户手势（已发生过则立即返回） */
+      wait(timeoutMs) {
+        if (this.has()) return Promise.resolve(true);
+        return new Promise((resolve) => {
+          let done = false;
+          const fire = () => { if (!done) { done = true; resolve(true); } };
+          this._waiters.push(fire);
+          if (timeoutMs > 0) setTimeout(() => { if (!done) { done = true; resolve(false); } }, timeoutMs);
+        });
+      },
+
+      /** 在 document-start 装一次监听（capture 阶段，任何点击都算） */
+      install() {
+        if (this._installed) return;
+        this._installed = true;
+        const self = this;
+        const evs = ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'wheel', 'click'];
+        evs.forEach((t) => {
+          try {
+            window.addEventListener(t, function h() { self.mark(t); }, { capture: true, passive: true, once: false });
+          } catch (e) { }
+        });
+        // 页面加载时若浏览器已认定激活（例如从上一页接力过来），直接标记
+        if (this.browserSaysActive()) this.seen = true;
+      },
     },
 
     /** 解析路径与查询参数，得到当前教室/小节信息 */
@@ -803,35 +865,97 @@
       return true;
     },
 
-    /** 后台保活：静音 + 自动续播 */
+    /**
+     * 后台保活：静音 + 自动续播。
+     *
+     * 关于「自动播放被网站拦截」（真实站点上确实会遇到）：
+     *   浏览器的自动播放策略要求「用户手势」或「静音」二者之一。
+     *   脚本会静音，但站点的播放器可能在之后又把它取消静音，
+     *   或者媒体元素尚未加载到可播放状态，于是 play() 被
+     *   NotAllowedError 拒绝。
+     *
+     *   关键是：被拒绝时**不要每 500ms 硬重试**（既无效又刷屏），
+     *   而是标记为「被拦截」，等用户第一次交互后再自动恢复播放。
+     */
     keepAlive(media) {
       if (!media) return;
       try {
-        if (CFG.mute) {
-          if (!media.muted) media.muted = true;
-          if (media.volume !== 0) media.volume = 0;
-          media.defaultMuted = true;
-          media.setAttribute('muted', 'muted');
-        }
+        this.ensureMuted(media);
+
         const dur = Number(media.duration);
         const nearEnd = Number.isFinite(dur) && dur > 1 && dur - media.currentTime <= 0.4;
-        if (media.paused && !media.ended && !nearEnd) {
-          const p = media.play();
-          if (p && p.catch) {
-            p.catch((err) => {
-              this.playFailCount = (this.playFailCount || 0) + 1;
+        if (!media.paused || media.ended || nearEnd) {
+          // 已经在播 → 若之前被判为拦截，说明其实能播，解除标记
+          if (!media.paused) this.autoplayBlocked = false;
+          return;
+        }
+        // 不支持 play() 的媒体对象直接跳过
+        if (typeof media.play !== 'function') return;
+
+        // 已知被浏览器拦截且用户还没交互过 → 不再空转重试，只等手势
+        if (this.autoplayBlocked && !U.gesture.has()) return;
+
+        const p = media.play();
+        if (p && p.catch) {
+          p.then(() => {
+            if (this.autoplayBlocked) {
+              this.autoplayBlocked = false;
+              LOG.ok('自动播放已恢复');
+            }
+            this.playFailCount = 0;
+          }).catch((err) => {
+            const name = (err && err.name) || '';
+            this.playFailCount = (this.playFailCount || 0) + 1;
+            const mediaErr = media.error;
+
+            if (name === 'NotAllowedError') {
+              // 自动播放策略拦截 —— 这是最常见的"被网站拦截"
+              this.autoplayBlocked = true;
+              this.onAutoplayBlocked(media);
+              return;
+            }
+            if (mediaErr && (mediaErr.code === 3 || mediaErr.code === 4)) {
               if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
-                const mediaErr = media.error;
-                if (mediaErr && (mediaErr.code === 3 || mediaErr.code === 4)) {
-                  LOG.warn(`媒体解码失败（code ${mediaErr.code}）：${mediaErr.message || ''}，可能是浏览器不支持该编码`);
-                } else {
-                  LOG.warn(`自动播放被拦截（第 ${this.playFailCount} 次）：${(err && err.name) || ''} ${(err && err.message) || ''}`);
-                }
+                LOG.warn(`媒体解码失败（code ${mediaErr.code}）：${mediaErr.message || ''}，可能是浏览器不支持该编码`);
               }
-            });
-          }
+              return;
+            }
+            if (this.playFailCount === 1 || this.playFailCount % 20 === 0) {
+              LOG.warn(`播放失败（第 ${this.playFailCount} 次）：${name} ${(err && err.message) || ''}`);
+            }
+          });
         }
       } catch (e) { }
+    },
+
+    /** 强制媒体静音（静音是自动播放策略放行的条件之一） */
+    ensureMuted(media) {
+      if (!CFG.mute || !media) return;
+      try {
+        if (!media.muted) media.muted = true;
+        if (media.volume !== 0) media.volume = 0;
+        media.defaultMuted = true;
+        if (!media.hasAttribute('muted')) media.setAttribute('muted', 'muted');
+      } catch (e) { }
+    },
+
+    /** 被自动播放策略拦截时的处理：提示一次，并在用户交互后自动恢复 */
+    onAutoplayBlocked(media) {
+      if (this._autoplayNotified) return;
+      this._autoplayNotified = true;
+      LOG.warn('自动播放被浏览器的自动播放策略拦截（未静音或缺少用户手势）。');
+      UI.notice('浏览器拦住了自动播放：请在本页面任意位置点一下，脚本会自动继续（之后整段课程都不再需要点击）');
+      U.gesture.wait(0).then(() => {
+        LOG.ok('检测到你的点击，正在恢复自动播放…');
+        this.autoplayBlocked = false;
+        this._autoplayNotified = false;
+        const m = Player.get() || media;
+        this.ensureMuted(m);
+        try {
+          const p = m.play();
+          if (p && p.catch) p.catch(() => { });
+        } catch (e) { }
+      });
     },
 
     /** 合成输入事件，避免站点「长时间无操作」弹窗 */
@@ -1622,6 +1746,8 @@
           .mini { all:unset; text-align:center; padding:5px; border-radius:6px; border:1px solid #dbe1ec;
                   cursor:pointer; font-size:11px; color:#475569; }
           .mini:hover { background:#f4f6fb; }
+          .notice { margin:6px 0 2px; padding:7px 9px; border-radius:7px; font-size:11px; line-height:1.5;
+                    background:#fef3c7; border:1px solid #fcd34d; color:#92400e; }
           .help { position:absolute; left:0; right:0; top:0; background:#fff; border-bottom:1px solid #e5e9f2;
                   padding:10px 12px 14px; display:none; flex-direction:column; gap:7px; max-height:520px; overflow:auto;
                   box-shadow:0 8px 24px rgba(15,23,42,.18); }
@@ -1685,6 +1811,7 @@
               <label class="chk"><input type="checkbox" id="c-ff" ${CFG.fastForward ? 'checked' : ''}>快进到结尾</label>
             </div>
             <button class="go" id="btn-go">开始刷课</button>
+            <div class="notice" id="notice" hidden></div>
             <div class="hd2"><span>运行日志</span><span id="s-guard">守卫就绪</span></div>
             <div class="log" id="log"></div>
             <div class="row" style="gap:6px">
@@ -1819,6 +1946,20 @@
       if (!this.els.go) return;
       this.els.go.textContent = on ? '停止刷课' : '开始刷课';
       this.els.go.classList.toggle('stop', on);
+    },
+
+    /**
+     * 在面板里显示一条显眼提示（例如「浏览器拦住了自动播放，请点一下页面」）。
+     * 传空字符串即清除；默认 60 秒后自动隐藏。
+     */
+    notice(msg, ms = 60000) {
+      const el = this.shadow && this.shadow.getElementById('notice');
+      if (!el) return;
+      if (!msg) { el.hidden = true; el.textContent = ''; return; }
+      el.hidden = false;
+      el.textContent = msg;
+      if (this._noticeTimer) clearTimeout(this._noticeTimer);
+      if (ms > 0) this._noticeTimer = setTimeout(() => this.notice(''), ms);
     },
 
     /** 打开/关闭「使用帮助」浮层，并在打开时做一次自检 */
@@ -2367,6 +2508,9 @@
       // ① 最早：装载守卫（必须早于站点脚本注册监听）
       //    注意：iframe 内的播放器同样需要守卫与倍速，否则后台照样被暂停
       try { Guard.install(); } catch (e) { console.error('[刷课助手] 守卫装载失败', e); }
+      // 追踪用户手势：浏览器自动播放策略要求「有用户手势 或 已静音」，
+      // 有了手势记录，用户点过一次之后脚本才能顺利恢复自动播放。
+      try { U.gesture.install(); } catch (e) { }
       try { Api.hook(); } catch (e) { }
 
       // ② 恢复用户设置
@@ -2495,6 +2639,8 @@
                 mediaTag: m ? m.tagName + (m.id ? '#' + m.id : '') : null,
                 error: m && m.error ? { code: m.error.code, message: m.error.message } : null,
                 playFailCount: Player.playFailCount || 0,
+                autoplayBlocked: !!Player.autoplayBlocked,
+                userGesture: { seen: U.gesture.seen, browserActive: U.gesture.browserSaysActive() },
                 rateFixCount: Player.rateFixCount || 0,
                 rateStats: Player.rateStats(),
                 progress: Player.readProgress(),

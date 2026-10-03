@@ -55,6 +55,8 @@ const UI = {
         .mini { all:unset; text-align:center; padding:5px; border-radius:6px; border:1px solid #dbe1ec;
                 cursor:pointer; font-size:11px; color:#475569; }
         .mini:hover { background:#f4f6fb; }
+        .notice { margin:6px 0 2px; padding:7px 9px; border-radius:7px; font-size:11px; line-height:1.5;
+                  background:#fef3c7; border:1px solid #fcd34d; color:#92400e; }
         .help { position:absolute; left:0; right:0; top:0; background:#fff; border-bottom:1px solid #e5e9f2;
                 padding:10px 12px 14px; display:none; flex-direction:column; gap:7px; max-height:520px; overflow:auto;
                 box-shadow:0 8px 24px rgba(15,23,42,.18); }
@@ -118,6 +120,7 @@ const UI = {
             <label class="chk"><input type="checkbox" id="c-ff" ${CFG.fastForward ? 'checked' : ''}>快进到结尾</label>
           </div>
           <button class="go" id="btn-go">开始刷课</button>
+          <div class="notice" id="notice" hidden></div>
           <div class="hd2"><span>运行日志</span><span id="s-guard">守卫就绪</span></div>
           <div class="log" id="log"></div>
           <div class="row" style="gap:6px">
@@ -252,6 +255,20 @@ const UI = {
     if (!this.els.go) return;
     this.els.go.textContent = on ? '停止刷课' : '开始刷课';
     this.els.go.classList.toggle('stop', on);
+  },
+
+  /**
+   * 在面板里显示一条显眼提示（例如「浏览器拦住了自动播放，请点一下页面」）。
+   * 传空字符串即清除；默认 60 秒后自动隐藏。
+   */
+  notice(msg, ms = 60000) {
+    const el = this.shadow && this.shadow.getElementById('notice');
+    if (!el) return;
+    if (!msg) { el.hidden = true; el.textContent = ''; return; }
+    el.hidden = false;
+    el.textContent = msg;
+    if (this._noticeTimer) clearTimeout(this._noticeTimer);
+    if (ms > 0) this._noticeTimer = setTimeout(() => this.notice(''), ms);
   },
 
   /** 打开/关闭「使用帮助」浮层，并在打开时做一次自检 */

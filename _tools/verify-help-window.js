@@ -59,7 +59,7 @@ const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  
   await sleep(1500);
   await s.eval(`document.getElementById('btn-login') && document.getElementById('btn-login').click(), true`);
   await sleep(2500);
-  await s.send('Page.navigate', { url: `http://127.0.0.1:8099/v2/web/studentLog/${CONFIG.classroom}` });
+  await s.send('Page.navigate', { url: `http://127.0.0.1:8099/v2/web/studentLog/${CONFIG.mock.classroom}` });
   await sleep(6000);
 
   const d = JSON.parse((await s.eval(`JSON.stringify({

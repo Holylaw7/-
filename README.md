@@ -296,6 +296,31 @@ GET /v2/api/web/logs/learn/<教室号>?actype=-1&page=N&offset=20&sort=-1
 
 ---
 
+## 三·D、自动播放被拦截（v1.1.1 修复）
+
+**现象**：进入播放页后视频停在原地不动，面板日志反复出现「自动播放被拦截」。
+
+**原因**：浏览器的**自动播放策略**。没有「用户手势」时，未静音的 `play()` 会被拒绝
+（`NotAllowedError: play() failed because the user didn't interact with the document first`）。
+站点自己的播放器也需要一次用户交互才会开始播放。
+
+**旧实现的缺陷**：脚本每 500ms 无条件重试 `play()`，失败就记一次数——
+既无法成功，也不会因为用户后来点了页面而恢复，只是不断刷日志。
+
+**现在的行为**：
+
+1. 播放前**强制静音**（静音是自动播放策略放行的条件之一，同时满足后台播放需求）
+2. 被 `NotAllowedError` 拒绝时，标记为「自动播放被拦」，**停止无效重试**
+3. 面板显示醒目提示：*「浏览器拦住了自动播放：请在本页面任意位置点一下」*
+4. 在 `document-start` 阶段监听 `pointerdown / mousedown / keydown / touchstart / wheel / click`，
+   你点一下之后**立刻自动恢复播放**，整段课程后续都不再需要点击
+5. 同时读取 `navigator.userActivation.hasBeenActive`，若浏览器认为页面已激活
+   （例如从上一页接力过来），则直接正常播放，不打扰你
+
+> 诊断信息里新增了 `autoplayBlocked` 与 `userGesture` 两个字段，便于排查是哪一种情况。
+
+---
+
 ## 四、验证方式（本地仿真环境）
 
 真实站点需要登录态，所以仓库自带一套**忠实复刻雨课堂反挂机逻辑**的本地仿真站点，

@@ -2,7 +2,7 @@
 // @name         长江雨课堂 · 自动刷课助手
 // @name:zh-CN   长江雨课堂 · 自动刷课助手
 // @namespace    https://github.com/local/changjiang-yuketang-auto
-// @version      1.1.0
+// @version      1.1.1
 // @description  长江雨课堂自动刷课：自动跳转下一节、锁定 2 倍速、切换页面/最小化后仍然后台播放（防暂停 / 防降速 / 防挂机弹窗），并自动跳过测验与作业。
 // @description:zh-CN 长江雨课堂自动刷课：自动跳转下一节、锁定 2 倍速、切换页面后仍然后台播放。
 // @author       local

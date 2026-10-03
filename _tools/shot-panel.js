@@ -10,7 +10,7 @@ const PORT = Number(process.env.CDP_PORT || 9222);
 const USERSCRIPT = path.join(__dirname, '..', 'dist', 'changjiang-yuketang-auto.user.js');
 const OUT = path.join(__dirname, '..', 'screenshots');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
+const LEAF = CONFIG.leaf || process.argv[2] || String(CONFIG.mock.leafBase);
 
 class Session {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); }
@@ -60,7 +60,7 @@ class Session {
   await sleep(1500);
   await s.eval(`document.getElementById('btn-login') && document.getElementById('btn-login').click(), true`);
   await sleep(2500);
-  await s.send('Page.navigate', { url: `http://127.0.0.1:8099/ai-workspace/lms-graph/${CONFIG.classroom}/video/${LEAF}?is_chapter=1` });
+  await s.send('Page.navigate', { url: `http://127.0.0.1:8099/ai-workspace/lms-graph/${CONFIG.mock.classroom}/video/${LEAF}?is_chapter=1` });
   await sleep(6000);
   // 让视频跑起来（手动启动），便于截图展示真实状态
   await s.eval(`window.__yktTool && window.__yktTool.start('截图')`);

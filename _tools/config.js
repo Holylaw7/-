@@ -72,9 +72,18 @@ CONFIG.url = {
 };
 
 CONFIG.mock = {
+  /**
+   * 本地仿真用的教室号/小节号，**故意是明显的虚构值**，与任何真实课程无关。
+   * mock-server.js 与所有仿真测试都从这里取，保证「仿真服务器」与「测试脚本」
+   * 永远指向同一个教室 —— 曾经因为两处各写各的（真实教室号 vs 仿真教室号）
+   * 而导致整套 e2e 静默失败。
+   */
+  classroom: String(pick('mock-classroom', 'MOCK_CLASSROOM', '10000001')),
+  leafBase: 90000001,
+  nodeBase: 70000001,
   origin: () => 'http://127.0.0.1:' + CONFIG.mockPort,
-  studentLog: () => 'http://127.0.0.1:' + CONFIG.mockPort + '/v2/web/studentLog/' + CONFIG.classroom,
-  video: (leafId) => 'http://127.0.0.1:' + CONFIG.mockPort + '/ai-workspace/lms-graph/' + CONFIG.classroom + '/video/' + leafId + '?is_chapter=1',
+  studentLog: () => 'http://127.0.0.1:' + CONFIG.mockPort + '/v2/web/studentLog/' + CONFIG.mock.classroom,
+  video: (leafId) => 'http://127.0.0.1:' + CONFIG.mockPort + '/ai-workspace/lms-graph/' + CONFIG.mock.classroom + '/video/' + leafId + '?is_chapter=1',
 };
 
 /** 从任意雨课堂 URL 里解析出教室号 / 小节号 / 学校 id */

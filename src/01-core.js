@@ -3,7 +3,7 @@
 // ============================================================================
 const YKT = {
   name: '长江雨课堂 · 自动刷课助手',
-  version: '1.1.0',
+  version: '1.1.1',
   debug: true,
 };
 
@@ -105,6 +105,68 @@ const U = {
   /** 文本归一化 */
   text(el) {
     return String((el && el.innerText) || '').replace(/\s+/g, ' ').trim();
+  },
+
+  // ------------------------------------------------------------ 用户手势
+  /**
+   * 浏览器自动播放策略：没有「用户手势」时，未静音的 play() 会被拒绝
+   * （NotAllowedError: play() failed because the user didn't interact with the
+   *  document first）。站点本身若也不自己调用 play()，页面就会停在那里。
+   *
+   * 这里显式追踪用户是否已经交互过：一旦有过，就可以正常自动播放；
+   * 没有的话，脚本只发一次自己的提示，等用户点一下就恢复。
+   */
+  gesture: {
+    seen: false,
+    _waiters: [],
+    _installed: false,
+
+    /** 浏览器记录的激活状态（比我们自己的标记更权威） */
+    browserSaysActive() {
+      try {
+        const ua = navigator.userActivation;
+        return !!(ua && (ua.hasBeenActive || ua.isActive));
+      } catch (e) { return false; }
+    },
+
+    /** 综合判断：我们见过手势，或浏览器说已经激活过 */
+    has() {
+      return this.seen || this.browserSaysActive();
+    },
+
+    mark(source) {
+      if (this.seen) return;
+      this.seen = true;
+      const waiters = this._waiters.slice();
+      this._waiters.length = 0;
+      waiters.forEach((fn) => { try { fn(); } catch (e) { } });
+    },
+
+    /** 等第一次用户手势（已发生过则立即返回） */
+    wait(timeoutMs) {
+      if (this.has()) return Promise.resolve(true);
+      return new Promise((resolve) => {
+        let done = false;
+        const fire = () => { if (!done) { done = true; resolve(true); } };
+        this._waiters.push(fire);
+        if (timeoutMs > 0) setTimeout(() => { if (!done) { done = true; resolve(false); } }, timeoutMs);
+      });
+    },
+
+    /** 在 document-start 装一次监听（capture 阶段，任何点击都算） */
+    install() {
+      if (this._installed) return;
+      this._installed = true;
+      const self = this;
+      const evs = ['pointerdown', 'mousedown', 'keydown', 'touchstart', 'wheel', 'click'];
+      evs.forEach((t) => {
+        try {
+          window.addEventListener(t, function h() { self.mark(t); }, { capture: true, passive: true, once: false });
+        } catch (e) { }
+      });
+      // 页面加载时若浏览器已认定激活（例如从上一页接力过来），直接标记
+      if (this.browserSaysActive()) this.seen = true;
+    },
   },
 
   /** 解析路径与查询参数，得到当前教室/小节信息 */

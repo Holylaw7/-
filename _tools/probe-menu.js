@@ -5,7 +5,7 @@
  */
 const CONFIG = require('./config');
 const PORT = Number(process.env.CDP_PORT || 9222);
-const APP = `http://127.0.0.1:${process.env.MOCK_PORT || 8099}`;
+const APP = CONFIG.mock.origin();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class Session {
@@ -46,7 +46,7 @@ class Session {
 }
 
 const PROBE = `JSON.stringify((function(){
-const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
+const LEAF = CONFIG.leaf || process.argv[2] || String(CONFIG.mock.leafBase);
   function box(sel){ var el=document.querySelector(sel); if(!el) return null; var r=el.getBoundingClientRect();
     return { sel: sel, x: Math.round(r.left+r.width/2), y: Math.round(r.top+r.height/2), w: Math.round(r.width), h: Math.round(r.height),
              display: getComputedStyle(el).display, cls: el.className }; }
@@ -80,7 +80,7 @@ const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
   await sleep(1200);
   await s.eval(`document.getElementById('btn-login') && document.getElementById('btn-login').click(), true`);
   await sleep(2000);
-  await s.send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.classroom}/video/${LEAF}?is_chapter=1` });
+  await s.send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.mock.classroom}/video/${LEAF}?is_chapter=1` });
   await sleep(4000);
   try { await s.send('Page.bringToFront'); } catch (e) { }
   await sleep(500);

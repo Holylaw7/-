@@ -11,10 +11,10 @@ const path = require('path');
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 const PORT = 9345;
-const APP = `http://127.0.0.1:${process.env.MOCK_PORT || 8099}`;
+const APP = CONFIG.mock.origin();
 const USERSCRIPT = path.join(__dirname, '..', 'dist', 'changjiang-yuketang-auto.user.js');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const LEAF = CONFIG.leaf || process.argv[2] || CONFIG.PLACEHOLDER;
+const LEAF = CONFIG.leaf || process.argv[2] || String(CONFIG.mock.leafBase);
 
 class Session {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); }
@@ -79,7 +79,7 @@ class Session {
     await sleep(2000);
 
     // 直接进第一个视频页
-    await main.send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.classroom}/video/${LEAF}?is_chapter=1` });
+    await main.send('Page.navigate', { url: `${APP}/ai-workspace/lms-graph/${CONFIG.mock.classroom}/video/${LEAF}?is_chapter=1` });
     await sleep(6000);
 
     console.log('\n===== 脚本内部状态 =====');
